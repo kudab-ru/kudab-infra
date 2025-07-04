@@ -1,0 +1,15 @@
+[submodule "services/kudab-api"]
+	path = services/kudab-api
+	url = git@github.com:kudab-ru/kudab-api.git
+[submodule "services/kudab-bot"]
+	path = services/kudab-bot
+	url = git@github.com:kudab-ru/kudab-bot.git
+[submodule "services/kudab-frontend"]
+	path = services/kudab-frontend
+	url = git@github.com:kudab-ru/kudab-frontend.git
+[submodule "services/kudab-nginx"]
+	path = services/kudab-nginx
+	url = git@github.com:kudab-ru/kudab-nginx.git
+[submodule "services/kudab-publisher"]
+	path = services/kudab-publisher
+	url = git@github.com:kudab-ru/kudab-publisher.git
