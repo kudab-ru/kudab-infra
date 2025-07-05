@@ -20,13 +20,12 @@ services:
 #        depends_on:
 #            - kudab-api
 #
-#    kudab-bot:
-#        build: ./kudab-bot
-#        container_name: kudab-bot
-#        env_file: .env
-#        depends_on:
-#            - kudab-api
-#            - kudab-db
+    kudab-bot:
+        build: ./services/kudab-bot
+        env_file: .env
+        depends_on:
+            - kudab-api
+            - kudab-nginx
 #
 #    kudab-publisher:
 #        build: ./kudab-publisher
