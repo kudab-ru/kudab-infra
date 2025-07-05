@@ -10,15 +10,13 @@ services:
         depends_on:
             - kudab-db
 
-#    kudab-frontend:
-#        build: ./kudab-frontend
-#        container_name: kudab-frontend
-#        env_file: .env
-#        # Фронтенд сервер SSR сам принимает запросы только от nginx, внешний порт не публикуем
-#        expose:
-#            - "8080"
-#        depends_on:
-#            - kudab-api
+    kudab-frontend:
+        build: ./services/kudab-frontend
+        env_file: .env
+        expose:
+            - "3000"
+        depends_on:
+            - kudab-api
 #
     kudab-bot:
         build: ./services/kudab-bot
@@ -26,15 +24,12 @@ services:
         depends_on:
             - kudab-api
             - kudab-nginx
-#
-#    kudab-publisher:
-#        build: ./kudab-publisher
-#        container_name: kudab-publisher
-#        env_file: .env
-#        depends_on:
-#            - kudab-api
-#            - kudab-db
-#
+    kudab-publisher:
+        build: ./services/kudab-publisher
+        env_file: .env
+        depends_on:
+            - kudab-api
+            - kudab-nginx
     kudab-nginx:
         build: ./services/kudab-nginx
         container_name: kudab-nginx
@@ -51,7 +46,7 @@ services:
 #            - ./services/kudab-api:/var/www/html:ro
         depends_on:
             - kudab-api
-#            - kudab-frontend
+            - kudab-frontend
 #
     kudab-db:
         image: postgres:15-alpine
