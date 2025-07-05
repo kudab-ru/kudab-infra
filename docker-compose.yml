@@ -1,0 +1,70 @@
+version: "3.9"
+services:
+    kudab-api:
+        user: "${UID}:${GID}"
+        build: ./services/kudab-api
+        container_name: kudab-api
+        env_file: .env
+        volumes:
+            - ./services/kudab-api:/var/www/html:rw  # монтируем код Laravel для возможности раздачи статики и удобства разработки
+        depends_on:
+            - kudab-db
+
+#    kudab-frontend:
+#        build: ./kudab-frontend
+#        container_name: kudab-frontend
+#        env_file: .env
+#        # Фронтенд сервер SSR сам принимает запросы только от nginx, внешний порт не публикуем
+#        expose:
+#            - "8080"
+#        depends_on:
+#            - kudab-api
+#
+#    kudab-bot:
+#        build: ./kudab-bot
+#        container_name: kudab-bot
+#        env_file: .env
+#        depends_on:
+#            - kudab-api
+#            - kudab-db
+#
+#    kudab-publisher:
+#        build: ./kudab-publisher
+#        container_name: kudab-publisher
+#        env_file: .env
+#        depends_on:
+#            - kudab-api
+#            - kudab-db
+#
+    kudab-nginx:
+        build: ./services/kudab-nginx
+        container_name: kudab-nginx
+        # Пробрасываем порт 80 контейнера наружу на порт 80 хоста
+        ports:
+            - "80:80"
+        volumes:
+            - ./services/kudab-nginx/default.conf:/etc/nginx/conf.d/default.conf
+            - ./services/kudab-api/public:/var/www/html/public
+            - ./services/kudab-api:/var/www/html
+#        volumes:
+            # Монтируем папку Laravel public для доступа к статическим файлам (storage, и т.п.)
+#            - ./services/kudab-api/public:/var/www/html/public:ro
+#            - ./services/kudab-api:/var/www/html:ro
+        depends_on:
+            - kudab-api
+#            - kudab-frontend
+#
+    kudab-db:
+        image: postgres:15-alpine
+        container_name: kudab-db
+        restart: unless-stopped
+        environment:
+            POSTGRES_DB: kudab
+            POSTGRES_USER: kudab
+            POSTGRES_PASSWORD: kudab
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+
+# Описание томов (для сохранения данных БД между запусками)
+volumes:
+    pgdata:
