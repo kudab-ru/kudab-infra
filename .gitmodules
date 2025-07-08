@@ -13,3 +13,6 @@
 [submodule "services/kudab-publisher"]
 	path = services/kudab-publisher
 	url = git@github.com:kudab-ru/kudab-publisher.git
+[submodule "services/kudab-parser"]
+	path = services/kudab-parser
+	url = git@github.com:kudab-ru/kudab-parser.git
