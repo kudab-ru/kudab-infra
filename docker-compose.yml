@@ -6,9 +6,20 @@ services:
         container_name: kudab-api
         env_file: .env
         volumes:
-            - ./services/kudab-api:/var/www/html:rw  # монтируем код Laravel для возможности раздачи статики и удобства разработки
+            - ./services/kudab-api:/var/www/html:rw
         depends_on:
             - kudab-db
+
+    kudab-parser:
+        user: "${UID}:${GID}"
+        build: ./services/kudab-parser
+        container_name: kudab-parser
+        env_file: .env
+        volumes:
+            - ./services/kudab-api:/var/www/html:rw
+        depends_on:
+            - kudab-db
+            - kudab-api
 
     kudab-frontend:
         build: ./services/kudab-frontend
