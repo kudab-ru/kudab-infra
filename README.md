@@ -13,5 +13,5 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 Запуск ci:
 ```shell
-docker-compose -f docker-compose.yml -f docker-compose.ci.yml up --abort-on-container-exit --exit-code-from kudab-api
+docker-compose -f docker-compose.yml -f docker-compose.ci.yml.disabled up --abort-on-container-exit --exit-code-from kudab-api
 ```
