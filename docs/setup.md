@@ -1,31 +1,28 @@
-#### SETUP: РАЗВЁРТЫВАНИЕ ПРОЕКТА KUDAB.RU
+#### SETUP: Быстрый старт для kudab.ru
 
 ---
 
-#### ОБЩИЕ ТРЕБОВАНИЯ
+#### Требования
 
-- Docker + Docker Compose (v2+)
-- Git (желательно с поддержкой submodules)
-- Node.js 20+ (локально — для разработки frontend)
-- Python 3.11+ (локально — для разработки бота)
-- make (опционально для коротких команд)
-- Доступ к .env файлам (шаблоны .env.example есть в каждом сервисе)
+- Docker + Compose (v2+)
+- Git (лучше с поддержкой submodules)
+- Node.js 20+ (для frontend)
+- Python 3.11+ (для бота)
+- Шаблоны `.env.example` (лежат в каждом сервисе)
 
 ---
 
-#### 1. КЛОНИРОВАНИЕ И ОБНОВЛЕНИЕ РЕПОЗИТОРИЯ
+#### 1. Клонируй репозиторий
 
 ```sh
 git clone --recurse-submodules git@github.com:kudab-ru/kudab-infra.git
 cd kudab-infra
-# Если submodules не подтянулись:
 git submodule update --init --recursive
 ```
+
 ---
 
-#### 2. КОНФИГУРАЦИЯ ОКРУЖЕНИЯ
-
-Скопируйте .env.example → .env в корне и во всех сервисах (api, frontend, bot, publisher):
+#### 2. Подготовь переменные окружения
 
 ```sh
 cp .env.example .env
@@ -33,92 +30,71 @@ cp services/kudab-api/.env.example services/kudab-api/.env
 cp services/kudab-frontend/.env.example services/kudab-frontend/.env
 cp services/kudab-bot/.env.example services/kudab-bot/.env
 cp services/kudab-publisher/.env.example services/kudab-publisher/.env
+cp services/kudab-parser/.env.example services/kudab-parser/.env
+cp services/kudab-admin/.env.example services/kudab-admin/.env
+cp services/kudab-recommendations/.env.example services/kudab-recommendations/.env
 ```
+Проверь и поправь значения под себя (DB, токены, почта, Redis, Swagger).
 
-Проверьте и отредактируйте переменные для вашего окружения (DB, API, токены, почта и др.).
+---
 
-#### 3. СБОРКА И ЗАПУСК ВСЕХ СЕРВИСОВ
+#### 3. Запусти проект
 
 ```sh
 docker compose up -d --build
 ```
+Все сервисы поднимутся автоматически.
 
-Сервисы поднимутся автоматически: API, frontend, bot, publisher, nginx, postgres.
+---
 
-#### 4. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
-
-Зайдите в контейнер API (Laravel) и выполните миграции (если не подтянулись автоматически):
-
-```sh
-docker compose exec kudab-api bash
-php artisan migrate --seed
-exit
-```
-
-#### 5. ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ
-
-Для сборки/перезапуска отдельных сервисов:
+#### 4. Миграция базы
 
 ```sh
-docker compose up -d --build kudab-frontend
-docker compose restart kudab-api
+docker compose exec kudab-api php artisan migrate --seed
 ```
 
-Для просмотра логов:
+---
 
-```sh
-docker compose logs -f kudab-api
-docker compose logs -f kudab-frontend
-```
+#### 5. Полезные команды
 
-Для остановки всех сервисов:
+- Перезапуск сервиса:
+  ```sh
+  docker compose restart kudab-api
+  ```
+- Просмотр логов:
+  ```sh
+  docker compose logs -f kudab-api
+  ```
+- Остановка:
+  ```sh
+  docker compose down
+  ```
 
-```sh
-docker compose down
-```
+---
 
-#### 6. ДЕВЕЛОПМЕНТ ЛОКАЛЬНО (по необходимости)
-Frontend (SSR, Nuxt.js):
+#### 6. Локальная разработка
 
-```sh
-cd services/kudab-frontend
-npm install
-npm run dev
-```
+- Frontend:
+  ```sh
+  cd services/kudab-frontend && npm install && npm run dev
+  ```
+- Bot:
+  ```sh
+  cd services/kudab-bot && pip install -r requirements.txt && python -m bot.main
+  ```
 
-#### SSR будет на http://localhost:3000/
+---
 
-Bot (Python, aiogram):
+#### 7. Доступ
 
-```sh
-cd services/kudab-bot
-pip install -r requirements.txt
-python -m bot.main
-```
-
-
-#### 7. ССЫЛКИ ДЛЯ ДОСТУПА
-[//]: # (TODO: Пересмотреть ссылку)
 - API: http://localhost/api/
-- Frontend: http://localhost/
-- Админка/API Swagger: (если есть) http://localhost/api/docs
-- Бот: @kudab_ru_bot
+- Front: http://localhost/
+- Admin: http://localhost/admin/
+- Swagger: http://localhost:8181
 
-#### 8. ЧАСТЫЕ ПРОБЛЕМЫ
+---
 
-Не работает база: проверьте переменные подключения (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD).
-
-Миграции не проходят: убедитесь, что контейнер с базой запущен (docker compose ps).
-
-Нет прав на файлы (storage/logs): настройте права внутри контейнера, если нужно:
-
-```sh
-docker compose exec kudab-api chown -R www-data:www-data storage bootstrap/cache
-```
-
-#### 9. ОБНОВЛЕНИЕ
-
-Для обновления кода и зависимостей:
+#### 8. Обновление
 
 ```sh
 git pull --recurse-submodules
@@ -127,9 +103,33 @@ docker compose pull
 docker compose up -d --build
 ```
 
-#### 10. РАСШИРЕНИЯ
+---
 
-Для отдельного запуска тестов, линтеров, задач CI — см. README.md и styleguide.md.
+#### 9. Проблемы
 
-Для настройки окружения production/staging — дополняется отдельным docker-compose.override.yml.
+- Проверь переменные подключения к базе и Redis
+- Проверь права на storage/logs:
+  ```sh
+  docker compose exec kudab-api chown -R www-data:www-data storage bootstrap/cache
+  ```
 
+---
+
+#### 10. Скрипты
+
+##### Основные скрипты из scripts/
+
+- `init-dev.sh` — инициализация dev-окружения, билд и запуск всех сервисов.
+- `deploy-prod.sh` — деплой на production.
+- `migrate.sh` — прогон миграций баз данных.
+- `test.sh` — полный запуск CI-процесса (прогон тестов всех сервисов).
+- `down.sh` — остановка всех контейнеров и очистка volume.
+- `logs.sh` — просмотр последних 100 строк логов всех сервисов.
+- `build.sh` — ручная сборка всех Docker-образов.
+
+> Перед запуском скриптов: не забудь выдать права на выполнение:
+> ```
+> chmod +x scripts/*.sh
+> ```
+
+---

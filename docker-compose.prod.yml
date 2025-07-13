@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  kudab-api:
+    restart: always
+    environment:
+      APP_ENV: production
+      # Можно добавить другие продакшн-переменные, если нужно
+
+  kudab-parser:
+    restart: always
+    environment:
+      APP_ENV: production
+
+  kudab-frontend:
+    restart: always
+    environment:
+      NODE_ENV: production
+
+  kudab-admin:
+    restart: always
+    environment:
+      NODE_ENV: production
+
+  kudab-bot:
+    restart: always
+    environment:
+      BOT_ENV: production
+
+  kudab-publisher:
+    restart: always
+    environment:
+      PUBLISHER_ENV: production
+
+  kudab-recommendations:
+    restart: always
+    environment:
+      RECOMMEND_ENV: production
+
+  kudab-nginx:
+    restart: always
+    environment:
+      NGINX_ENV: production
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./services/kudab-nginx/default.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs/prod:/etc/nginx/certs:ro
+    # В продакшене ports остаются стандартными 80/443 (как в базовом файле)
+    # Volume только для конфигов и сертификатов (уже задано в базовом)
+
+  kudab-db:
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kudab}
+      POSTGRES_USER: ${POSTGRES_USER:-kudab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kudab}
+
+volumes:
+  pgdata:

@@ -2,7 +2,7 @@
 
 - [architecture.md](architecture.md) — архитектура и схемы
 - [db-schema.md](db-schema.md) — описание структуры базы данных
-- [database.dbml](database.dbml) — ER-диаграмма для визуализации
+- [database.dbml](source/database.dbml) — ER-диаграмма для визуализации
 - [setup.md](setup.md) — быстрый старт и настройка окружения
 - [api.md](api.md) — документация по API
 - [bot.md](bot.md) — сценарии работы Telegram-бота

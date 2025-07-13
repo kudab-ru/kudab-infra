@@ -122,7 +122,7 @@ API ориентирован как на массовых пользовател
 
 - [api-reference.yaml](api-reference.yaml) — полная OpenAPI-спецификация (Swagger UI)
 - [bot.md](bot.md) — сценарии работы Telegram-бота и API-интеграция
-- [database.dbml](database.dbml) — соответствие моделей БД и контрактов API
+- [database.dbml](source/database.dbml) — соответствие моделей БД и контрактов API
 - [setup.md](setup.md) — настройка API, переменные окружения, best practices
 
 ---
