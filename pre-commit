@@ -1,0 +1,10 @@
+#!/bin/bash
+# .git/hooks/pre-commit (в корне meta-репозитория)
+
+# Автоматически обновить все сабмодули до последних коммитов
+git submodule update --remote
+
+# Добавить обновленные сабмодули в индекс, если были изменения
+git diff --submodule=log | grep '^Submodule' | awk '{print $2}' | while read mod; do
+  git add $mod
+done
