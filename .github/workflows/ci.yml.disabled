@@ -2,48 +2,81 @@ name: CI & Tests
 
 on:
   push:
-    branches: [main, develop]
+    paths:
+      - 'services/kudab-api/**'
+      - 'services/kudab-parser/**'
+      - '.github/workflows/ci.yml'
+      - '.gitmodules'
   pull_request:
-    branches: [main, develop]
+    paths:
+      - 'services/kudab-api/**'
+      - 'services/kudab-parser/**'
+      - '.github/workflows/ci.yml'
+      - '.gitmodules'
 
 jobs:
-  build-test:
-    runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: kudab_ci
-          POSTGRES_USER: kudab_ci
-          POSTGRES_PASSWORD: kudab_ci
-        ports: [5432:5432]
-        options: >-
-          --health-cmd="pg_isready -U kudab_ci" --health-interval=10s --health-timeout=5s --health-retries=5
-      redis:
-        image: redis:7-alpine
-        ports: [6379:6379]
-        options: >-
-          --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=5
+  kudab-api:
+    if: github.event.head_commit.message != 'skip ci'
+    runs-on: ubuntu-latest
+    name: Test & Lint kudab-api
+
+    defaults:
+      run:
+        working-directory: services/kudab-api
 
     steps:
-      - name: Checkout code
+      - name: Checkout code with submodules
         uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
 
-      - name: Copy example env
+      - name: Copy .env
         run: cp .env.example .env
 
-      - name: Build & Run containers for CI
-        run: |
-          docker-compose -f docker-compose.yml -f docker-compose.ci.yml up --abort-on-container-exit --exit-code-from kudab-api
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
 
-      - name: Show logs if failed
-        if: failure()
-        run: docker-compose -f docker-compose.yml -f docker-compose.ci.yml logs
+      - name: Lint (Pint)
+        run: ./vendor/bin/pint --test
 
-      - name: Shutdown containers
-        if: always()
-        run: docker-compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+      - name: Run unit tests
+        run: ./vendor/bin/phpunit
+
+  kudab-parser:
+    if: github.event.head_commit.message != 'skip ci'
+    runs-on: ubuntu-latest
+    name: Test & Lint kudab-parser
+
+    defaults:
+      run:
+        working-directory: services/kudab-parser
+
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Lint (Pint)
+        run: ./vendor/bin/pint --test
+
+      - name: Run unit tests
+        run: ./vendor/bin/phpunit
+
