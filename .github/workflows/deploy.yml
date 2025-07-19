@@ -40,7 +40,7 @@ jobs:
             interval=5
             elapsed=0
           
-            services="kudab-api kudab-frontend kudab-nginx kudab-db"
+            services="kudab-nginx kudab-db"
           
             while [ \$elapsed -lt \$timeout ]; do
               all_healthy=true
