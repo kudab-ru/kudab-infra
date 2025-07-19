@@ -70,9 +70,17 @@ jobs:
           
             docker image prune -af
           EOF
+      - name: Backup DB before migrations
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} \
+          'cd ${{ vars.PROD_DIRECTORY }} && ./scripts/backup_db.sh'
       - name: Run migrations
         run: |
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << EOF
             cd ${{ vars.PROD_DIRECTORY }}
             ./scripts/migrate.sh
           EOF
+      - name: Smoke test (API + frontend)
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} \
+          'curl -f http://localhost/api/ping && curl -f http://localhost/'
