@@ -29,7 +29,6 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
             set -e
-          
             cd ${{ vars.PROD_DIRECTORY }}
             git pull
             git submodule update --init --recursive
@@ -47,7 +46,7 @@ jobs:
             while [ \$elapsed -lt \$timeout ]; do
               all_healthy=true
               for service in \$services; do
-                status=$(docker inspect --format '{{'{{'}}.State.Health.Status{{'}}'}}' $service 2>/dev/null || echo 'notfound')
+                status=$(docker inspect --format '{{.State.Health.Status}}' $service 2>/dev/null || echo 'notfound')
                 if [ "\$status" != "healthy" ]; then
                   all_healthy=false
                   echo "\$service not healthy yet: \$status"
@@ -64,7 +63,7 @@ jobs:
             if [ "\$all_healthy" != true ]; then
               echo "::error ::Timeout waiting for containers to become healthy"
               for service in \$services; do
-                docker inspect --format 'HEALTH: {{'{{'}}.State.Health.Status{{'}}'}}' $service 2>/dev/null || true
+                docker inspect --format 'HEALTH: {{.State.Health.Status}}' $service 2>/dev/null || true
                 docker logs \$service || true
               done
               exit 1
