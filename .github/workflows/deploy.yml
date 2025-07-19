@@ -70,3 +70,9 @@ jobs:
           
             docker image prune -af
           EOF
+      - name: Run migrations
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << EOF
+            cd ${{ vars.PROD_DIRECTORY }}
+            ./scripts/migrate.sh
+          EOF
