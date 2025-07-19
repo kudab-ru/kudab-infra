@@ -1,9 +1,9 @@
 name: Deploy
 
 on:
-  workflow_dispatch:      # запуск вручную по кнопке
+  workflow_dispatch:
   push:
-    branches: [main]      # или prod/master — по желанию
+    branches: [main]
 
 jobs:
   deploy-api:
@@ -28,10 +28,48 @@ jobs:
       - name: Deploy to server (ssh)
         run: |
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
+            set -e
+          
             cd ${{ vars.PROD_DIRECTORY }}
             git pull
             git submodule update --init --recursive
+          
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+          
+            # Ждем, пока ВСЕ нужные сервисы не станут healthy (или не выйдет таймаут)
+            timeout=120
+            interval=5
+            elapsed=0
+          
+            services="kudab-api kudab-frontend kudab-nginx kudab-db"
+          
+            while [ \$elapsed -lt \$timeout ]; do
+              all_healthy=true
+              for service in \$services; do
+                status=\$(docker inspect --format '{{.State.Health.Status}}' \$service 2>/dev/null || echo 'notfound')
+                if [ "\$status" != "healthy" ]; then
+                  all_healthy=false
+                  echo "\$service not healthy yet: \$status"
+                fi
+              done
+              if [ "\$all_healthy" = true ]; then
+                echo "All critical services healthy."
+                break
+              fi
+              sleep \$interval
+              elapsed=\$((elapsed + interval))
+            done
+          
+            if [ "\$all_healthy" != true ]; then
+              echo "::error ::Timeout waiting for containers to become healthy"
+              for service in \$services; do
+                docker inspect --format 'HEALTH: {{.State.Health.Status}}' \$service 2>/dev/null || true
+                docker logs \$service || true
+              done
+              exit 1
+            fi
+          
+            # Чистим неиспользуемые образы
             docker image prune -af
           EOF
