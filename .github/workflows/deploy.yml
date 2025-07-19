@@ -26,8 +26,8 @@ jobs:
 
       - name: Deploy to server (ssh)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ var.PROD_SSH_USER }}@${{ var.PROD_SSH_HOST }} << 'EOF'
-            cd ${{ var.PROD_DIRECTORY }}
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
+            cd ${{ vars.PROD_DIRECTORY }}
             git pull
             git submodule update --init --recursive
             docker-compose -f docker-compose.yml -f docker-compose.prod.yml pull
