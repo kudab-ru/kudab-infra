@@ -12,6 +12,12 @@ services:
       - kudab-db
       - kudab-recommendations
       - redis
+    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost/api/ping" ]
+      test: [ "CMD", "true" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   kudab-parser:
     user: "${UID}:${GID}"
@@ -34,6 +40,11 @@ services:
 #      - ./services/kudab-frontend:/app:rw
     depends_on:
       - kudab-api
+#    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost:3000/" ]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
 
   kudab-admin:
     build: ./services/kudab-admin
@@ -88,6 +99,11 @@ services:
       - kudab-api
       - kudab-frontend
       - kudab-admin
+#    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost:80/" ]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -118,6 +134,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kudab}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 volumes:
   pgdata:
