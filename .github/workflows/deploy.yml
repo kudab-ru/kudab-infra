@@ -102,9 +102,9 @@ jobs:
           EOF
       - name: Smoke test (API + frontend)
         run: |
-          curl -sk https://kudasobrat.ru/api/ping | grep -q "\"ok\":true"
-          curl -sk https://kudasobrat.ru/api/ping | grep -q "\"result\":\"pong\""
-          curl -sk https://kudasobrat.ru/ | grep -q "<html"
+          curl -sk $PROD_DOMAIN/api/ping | grep -q "\"ok\":true"
+          curl -sk $PROD_DOMAIN/api/ping | grep -q "\"result\":\"pong\""
+          curl -sk $PROD_DOMAIN/ | grep -q "<html"
 
       - name: Rollback all services (ssh)
         if: failure()
