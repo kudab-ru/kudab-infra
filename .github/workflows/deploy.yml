@@ -33,15 +33,20 @@ jobs:
             git pull
             git submodule update --init --recursive
 
-            # --- Сохраняем старые образы как :previous ---
+            # --- Сохраняем старые образы как :previous только для :latest ---
             services=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config --services)
-          
+
             for service in $services; do
               image=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q $service)
               if [ -n "$image" ]; then
-                repo=$(docker inspect --format='{{index .RepoTags 0}}' $image | sed 's/:latest$//')
-                docker tag $repo:latest $repo:previous
-                echo "$repo:latest -> $repo:previous сохранён"
+                repo=$(docker inspect --format='{{index .RepoTags 0}}' $image)
+                if [[ "$repo" == *:latest ]]; then
+                  repo_base=${repo%:latest}
+                  docker tag "$repo_base:latest" "$repo_base:previous"
+                  echo "$repo_base:latest -> $repo_base:previous сохранён"
+                else
+                  echo "$repo не тегируется (не :latest), пропущено"
+                fi
               else
                 echo "Образ для $service не найден, пропущено"
               fi
