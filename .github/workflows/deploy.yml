@@ -27,47 +27,62 @@ jobs:
 
       - name: Deploy to server (ssh)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
             set -e
             cd ${{ vars.PROD_DIRECTORY }}
             git pull
             git submodule update --init --recursive
-          
+
+            # --- Сохраняем старые образы как :previous ---
+            services="kudab-api kudab-parser kudab-web"
+            for service in $services; do
+              image=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml images -q $service)
+              if [ -n "$image" ]; then
+                repo=$(docker inspect --format='{{index .RepoTags 0}}' $image | sed 's/:latest$//')
+                docker tag $repo:latest $repo:previous
+                docker push $repo:previous
+                echo "$repo:latest -> $repo:previous сохранён"
+              else
+                echo "Образ для $service не найден, пропущено"
+              fi
+            done
+
+            # --- Дальше обычный деплой ---
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-          
+
             timeout=120
             interval=5
             elapsed=0
-          
+
             services="kudab-nginx kudab-db"
-          
-            while [ \$elapsed -lt \$timeout ]; do
+
+            while [ $elapsed -lt $timeout ]; do
               all_healthy=true
-              for service in \$services; do
-                status=\$(docker inspect --format '{{.State.Health.Status}}' \$service 2>/dev/null || echo 'notfound')
-                if [ "\$status" != "healthy" ]; then
+              for service in $services; do
+                status=$(docker inspect --format '{{.State.Health.Status}}' $service 2>/dev/null || echo 'notfound')
+                if [ "$status" != "healthy" ]; then
                   all_healthy=false
-                  echo "\$service not healthy yet: \$status"
+                  echo "$service not healthy yet: $status"
                 fi
               done
-              if [ "\$all_healthy" = true ]; then
+              if [ "$all_healthy" = true ]; then
                 echo "All critical services healthy."
                 break
               fi
-              sleep \$interval
-              elapsed=\$((\$elapsed + \$interval))
+              sleep $interval
+              elapsed=$((elapsed + $interval))
             done
-          
-            if [ "\$all_healthy" != true ]; then
+
+            if [ "$all_healthy" != true ]; then
               echo "::error ::Timeout waiting for containers to become healthy"
-              for service in \$services; do
-                docker inspect --format 'HEALTH: {{.State.Health.Status}}' \$service 2>/dev/null || true
-                docker logs \$service || true
+              for service in $services; do
+                docker inspect --format 'HEALTH: {{.State.Health.Status}}' $service 2>/dev/null || true
+                docker logs $service || true
               done
               exit 1
             fi
-          
+
             docker image prune -af
           EOF
       - name: Backup DB before migrations
