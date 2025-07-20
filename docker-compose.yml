@@ -1,5 +1,6 @@
 services:
   kudab-api:
+    image: kudab-api:latest
     user: "${UID}:${GID}"
     build: ./services/kudab-api
     container_name: ${KUDAB_API_CONTAINER:-kudab-api}
@@ -20,6 +21,7 @@ services:
       retries: 3
 
   kudab-parser:
+    image: kudab-parser:latest
     user: "${UID}:${GID}"
     build: ./services/kudab-parser
     container_name: ${KUDAB_PARSER_CONTAINER:-kudab-parser}
@@ -31,6 +33,7 @@ services:
       - kudab-api
 
   kudab-frontend:
+    image: kudab-frontend:latest
     build: ./services/kudab-frontend
     container_name: ${KUDAB_FRONTEND_CONTAINER:-kudab-frontend}
     env_file: .env
@@ -47,6 +50,7 @@ services:
 #      retries: 3
 
   kudab-admin:
+    image: kudab-admin:latest
     build: ./services/kudab-admin
     container_name: ${KUDAB_ADMIN_CONTAINER:-kudab-admin}
     env_file: .env
@@ -58,6 +62,7 @@ services:
       - kudab-api
 
   kudab-bot:
+    image: kudab-bot:latest
     build: ./services/kudab-bot
     container_name: ${KUDAB_BOT_CONTAINER:-kudab-bot}
     env_file: .env
@@ -67,6 +72,7 @@ services:
       - kudab-api
 
   kudab-publisher:
+    image: kudab-publisher:latest
     build: ./services/kudab-publisher
     container_name: ${KUDAB_PUBLISHER_CONTAINER:-kudab-publisher}
     env_file: .env
@@ -76,6 +82,7 @@ services:
       - kudab-api
 
   kudab-recommendations:
+    image: kudab-recommendations:latest
     build: ./services/kudab-recommendations
     container_name: ${KUDAB_RECOMMENDATIONS_CONTAINER:-kudab-recommendations}
     env_file: .env
@@ -85,6 +92,7 @@ services:
       - ./services/kudab-recommendations:/app:rw
 
   kudab-nginx:
+    image: kudab-nginx:latest
     build: ./services/kudab-nginx
     container_name: ${KUDAB_NGINX_CONTAINER:-kudab-nginx}
     ports:
