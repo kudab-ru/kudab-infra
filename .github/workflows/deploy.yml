@@ -30,6 +30,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
             set -e
             cd ${{ vars.PROD_DIRECTORY }}
+            git checkout main
             git rev-parse HEAD > .last_deployed_commit
             git pull
             git submodule update --init --recursive

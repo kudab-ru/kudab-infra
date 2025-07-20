@@ -5,13 +5,14 @@ cd "$(dirname "$0")/.."
 
 if [ -f .last_deployed_commit ]; then
   echo "[rollback] Откат к коммиту $(cat .last_deployed_commit)"
+  git checkout main # обязательно checkout main перед возвратом
   git checkout $(cat .last_deployed_commit)
   git submodule update --init --recursive
 else
   echo "[rollback] Файл .last_deployed_commit не найден! Код не откатан!"
 fi
 
-# 1. Остановить сервисы и удалить volume БД (чисто!)
+# 1. Остановить сервисы и удалить volume БД
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
 cp docker-compose.prod.yml docker-compose.prod.yml.rollback
@@ -24,7 +25,7 @@ done
 docker compose -f docker-compose.yml -f docker-compose.prod.yml.rollback up -d kudab-db
 sleep 10
 
-# 3. Восстановить БД из backup (без drop schema, volume уже пустой)
+# 3. Восстановить БД из backup (volume уже чистый)
 LATEST_DUMP=$(ls -1t backups/db_backup_*.sql 2>/dev/null | head -n 1)
 if [ -f "$LATEST_DUMP" ]; then
   echo "[rollback] Восстанавливаем БД из $LATEST_DUMP"
