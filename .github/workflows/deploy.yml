@@ -102,11 +102,9 @@ jobs:
           EOF
       - name: Smoke test (API + frontend)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} '
-            curl -sf http://localhost/api/ping | grep -q "\"ok\":true"
-            curl -sf http://localhost/api/ping | grep -q "\"result\":\"pong\""
-            curl -sf http://localhost/ | grep -q "<html"
-          '
+          curl -sk https://kudasobrat.ru/api/ping | grep -q "\"ok\":true"
+          curl -sk https://kudasobrat.ru/api/ping | grep -q "\"result\":\"pong\""
+          curl -sk https://kudasobrat.ru/ | grep -q "<html"
 
       - name: Rollback all services (ssh)
         if: failure()
