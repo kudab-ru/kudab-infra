@@ -33,6 +33,9 @@ jobs:
             git pull
             git submodule update --init --recursive
 
+            # --- Явная сборка всех образов с тегом :latest ---
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
             # --- Сохраняем старые образы как :previous только для :latest ---
             services=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config --services)
 
@@ -51,17 +54,19 @@ jobs:
                 echo "Образ для $service не найден, пропущено"
               fi
             done
-
+            
             # --- Дальше обычный деплой ---
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-
+            
+            docker images | grep kudab
+            
             timeout=120
             interval=5
             elapsed=0
-
+            
             services="kudab-nginx kudab-db"
-
+            
             while [ $elapsed -lt $timeout ]; do
               all_healthy=true
               for service in $services; do
@@ -78,7 +83,7 @@ jobs:
               sleep $interval
               elapsed=$((elapsed + $interval))
             done
-
+            
             if [ "$all_healthy" != true ]; then
               echo "::error ::Timeout waiting for containers to become healthy"
               for service in $services; do
@@ -87,7 +92,7 @@ jobs:
               done
               exit 1
             fi
-
+            
             docker image prune -af
           EOF
       - name: Backup DB before migrations
