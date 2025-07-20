@@ -45,7 +45,7 @@ jobs:
               fi
             done
 
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull postgres redis swaggerapi/swagger-ui
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull kudab-db kudab-redis kudab-swagger
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
             timeout=120
