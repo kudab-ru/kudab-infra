@@ -101,10 +101,12 @@ jobs:
             ./scripts/migrate.sh
           EOF
       - name: Smoke test (API + frontend)
+        env:
+          APP_URL: https://kudasobrat.ru
         run: |
-          curl -sk $PROD_DOMAIN/api/ping | grep -q "\"ok\":true"
-          curl -sk $PROD_DOMAIN/api/ping | grep -q "\"result\":\"pong\""
-          curl -sk $PROD_DOMAIN/ | grep -q "<html"
+          curl -sk $APP_URL/api/ping | grep -q "\"ok\":true"
+          curl -sk $APP_URL/api/ping | grep -q "\"result\":\"pong\""
+          curl -sk $APP_URL/ | grep -q "<html"
 
       - name: Rollback all services (ssh)
         if: failure()
