@@ -133,7 +133,7 @@ services:
       - "8181:8080"   # наружу только в dev
 
   kudab-db:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.4
     container_name: ${KUDAB_DB_CONTAINER:-kudab-db}
     restart: unless-stopped
     environment:
@@ -142,6 +142,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kudab}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U kudab" ]
       interval: 30s
