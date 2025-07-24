@@ -6,8 +6,8 @@
 	url = git@github.com:kudab-ru/kudab-bot.git
 [submodule "services/kudab-frontend"]
 	path = services/kudab-frontend
-	url = git@github.com:Solomka-0/nuxt4-ssr-starter-templates.git
-	branch = refactor/fsd-structure
+	url = git@github.com:kudab-ru/kudab-frontend.git
+	branch = main
 [submodule "services/kudab-nginx"]
 	path = services/kudab-nginx
 	url = git@github.com:kudab-ru/kudab-nginx.git
