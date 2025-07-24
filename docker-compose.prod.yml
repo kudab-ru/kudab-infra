@@ -15,10 +15,10 @@ services:
     environment:
       NODE_ENV: production
 
-  kudab-admin:
-    restart: always
-    environment:
-      NODE_ENV: production
+#  kudab-admin:
+#    restart: always
+#    environment:
+#      NODE_ENV: production
 
   kudab-bot:
     restart: always

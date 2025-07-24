@@ -31,14 +31,14 @@ services:
       - ./services/kudab-frontend:/app:rw
       - /app/node_modules
 
-  kudab-admin:
-    environment:
-      NODE_ENV: development
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./services/kudab-admin:/app:rw
-      - /app/node_modules
+#  kudab-admin:
+#    environment:
+#      NODE_ENV: development
+#    ports:
+#      - "8080:8080"
+#    volumes:
+#      - ./services/kudab-admin:/app:rw
+#      - /app/node_modules
 
   kudab-bot:
     environment:

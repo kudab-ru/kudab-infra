@@ -49,17 +49,17 @@ services:
 #      timeout: 10s
 #      retries: 3
 
-  kudab-admin:
-    image: kudab-admin:latest
-    build: ./services/kudab-admin
-    container_name: ${KUDAB_ADMIN_CONTAINER:-kudab-admin}
-    env_file: .env
-    expose:
-      - "${ADMIN_PORT:-8080}"
-    volumes:
-      - ./services/kudab-admin:/app:rw
-    depends_on:
-      - kudab-api
+#  kudab-admin:
+#    image: kudab-admin:latest
+#    build: ./services/kudab-admin
+#    container_name: ${KUDAB_ADMIN_CONTAINER:-kudab-admin}
+#    env_file: .env
+#    expose:
+#      - "${ADMIN_PORT:-8080}"
+#    volumes:
+#      - ./services/kudab-admin:/app:rw
+#    depends_on:
+#      - kudab-api
 
   kudab-bot:
     image: kudab-bot:latest
@@ -106,7 +106,7 @@ services:
     depends_on:
       - kudab-api
       - kudab-frontend
-      - kudab-admin
+#      - kudab-admin
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/ && curl -f http://localhost/api/ping"]
       interval: 30s
