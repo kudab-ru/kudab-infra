@@ -21,6 +21,11 @@ services:
       - ./services/kudab-parser:/var/www/html:rw
       - ./services/kudab-parser/vendor:/var/www/html/vendor
       - ./services/kudab-parser/storage:/var/www/html/storage
+    ports:
+      - "8089:80"          # Только если нужен доступ к Horizon снаружи
+    command: >
+      sh -c "php artisan migrate --force &&
+             php artisan horizon"
 
   kudab-frontend:
     environment:

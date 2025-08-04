@@ -1,8 +1,8 @@
 # DB-SCHEMA.md
 
-## Описание структуры базы данных KUDAB
+## Описание структуры базы данных KUDAB (2025)
 
-База данных построена для масштабируемого хранения событий, пользователей, сообществ, интересов и универсального контента. Используются best practices для именования, связей, индексирования и поддержки geo-запросов (PostGIS).
+Архитектура БД рассчитана на масштабируемое хранение событий, пользователей, сообществ, интересов и универсального контента с поддержкой гибкой фильтрации, гео-запросов (PostGIS) и интеграции с соцсетями. Вся структура нормализована (3НФ), индексы оптимизированы под основные запросы.
 
 ---
 
@@ -10,106 +10,111 @@
 
 ### USERS
 
-| Поле           | Тип         | Описание                   |
-|----------------|-------------|----------------------------|
-| id             | bigserial   | PRIMARY KEY                |
-| name           | varchar     | Имя пользователя           |
-| email          | varchar     | Email (уникальный)         |
-| password       | varchar     | Пароль (хеш)               |
-| avatar_url     | varchar     | Ссылка на аватар           |
-| bio            | text        | О себе                     |
-| email_verified_at | timestamp| Время подтверждения email  |
-| remember_token | varchar     | Для восстановления сессии  |
-| created_at     | timestamp   |                            |
-| updated_at     | timestamp   |                            |
-| deleted_at     | timestamp   | Soft delete                |
+| Поле              | Тип         | Описание                      |
+|-------------------|-------------|-------------------------------|
+| id                | bigserial   | PRIMARY KEY                   |
+| name              | varchar     | Имя пользователя              |
+| email             | varchar     | Email (уникальный)            |
+| password          | varchar     | Пароль (hash)                 |
+| avatar_url        | varchar     | Ссылка на аватар              |
+| bio               | text        | О себе                        |
+| email_verified_at | timestamp   | Время подтверждения email     |
+| remember_token    | varchar     | Токен для восстановления      |
+| created_at        | timestamp   |                               |
+| updated_at        | timestamp   |                               |
+| deleted_at        | timestamp   | Soft delete                   |
 
 #### telegram_users
 
-| Поле             | Тип        | Описание                  |
-|------------------|------------|---------------------------|
-| id               | bigserial  | PRIMARY KEY               |
-| user_id          | bigint     | FK → users.id (nullable)  |
-| telegram_id      | bigint     | Telegram user ID (unique) |
-| telegram_username| varchar    | username Telegram         |
-| first_name       | varchar    | Имя Telegram              |
-| last_name        | varchar    | Фамилия Telegram          |
-| language_code    | varchar    | Язык                      |
-| chat_id          | bigint     | ID чата                   |
-| is_bot           | boolean    | Бот?                      |
-| registered_at    | timestamp  | Первое посещение          |
-| last_active      | timestamp  | Последняя активность      |
-| created_at       | timestamp  |                           |
-| updated_at       | timestamp  |                           |
+| Поле               | Тип        | Описание                  |
+|--------------------|------------|---------------------------|
+| id                 | bigserial  | PRIMARY KEY               |
+| user_id            | bigint     | FK → users.id (nullable)  |
+| telegram_id        | bigint     | Telegram user ID (unique) |
+| telegram_username  | varchar    | username Telegram         |
+| first_name         | varchar    | Имя Telegram              |
+| last_name          | varchar    | Фамилия Telegram          |
+| language_code      | varchar    | Язык                      |
+| chat_id            | bigint     | ID чата                   |
+| is_bot             | boolean    | Бот?                      |
+| registered_at      | timestamp  | Первое посещение          |
+| last_active        | timestamp  | Последняя активность      |
+| created_at         | timestamp  |                           |
+| updated_at         | timestamp  |                           |
 
 ---
 
 ### INTERESTS
 
-| Поле      | Тип      | Описание                      |
-|-----------|----------|-------------------------------|
-| id        | bigserial| PRIMARY KEY                   |
-| name      | varchar  | Название интереса             |
-| parent_id | bigint   | FK → interests.id (nullable)  |
-| is_paid   | boolean  | Платный интерес               |
-| created_at| timestamp|                               |
-| updated_at| timestamp|                               |
+| Поле      | Тип      | Описание                        |
+|-----------|----------|---------------------------------|
+| id        | bigserial| PRIMARY KEY                     |
+| name      | varchar  | Название интереса               |
+| parent_id | bigint   | FK → interests.id (nullable)    |
+| is_paid   | boolean  | Платный интерес                 |
+| created_at| timestamp|                                 |
+| updated_at| timestamp|                                 |
 
 #### interest_user
 
-| Поле       | Тип     | Описание                     |
-|------------|---------|------------------------------|
-| user_id    | bigint  | FK → users.id                |
-| interest_id| bigint  | FK → interests.id            |
-| created_at | timestamp|                             |
-| updated_at | timestamp|                             |
+| Поле        | Тип     | Описание                     |
+|-------------|---------|------------------------------|
+| user_id     | bigint  | FK → users.id                |
+| interest_id | bigint  | FK → interests.id            |
+| created_at  | timestamp|                             |
+| updated_at  | timestamp|                             |
 **PRIMARY KEY (user_id, interest_id)**
 
 #### interest_relations
 
-| Поле               | Тип     | Описание               |
-|--------------------|---------|------------------------|
-| id                 | bigserial| PRIMARY KEY           |
-| parent_interest_id | bigint  | FK → interests.id      |
-| child_interest_id  | bigint  | FK → interests.id      |
-| created_at         | timestamp|                       |
-| updated_at         | timestamp|                       |
+| Поле               | Тип     | Описание                    |
+|--------------------|---------|-----------------------------|
+| id                 | bigserial| PRIMARY KEY                |
+| parent_interest_id | bigint  | FK → interests.id           |
+| child_interest_id  | bigint  | FK → interests.id           |
+| created_at         | timestamp|                            |
+| updated_at         | timestamp|                            |
 
 ---
 
 ### COMMUNITIES
 
-| Поле        | Тип      | Описание                   |
-|-------------|----------|----------------------------|
-| id          | bigserial| PRIMARY KEY                |
-| name        | varchar  | Название                   |
-| description | text     | Описание                   |
-| source      | varchar  | vk, tg, site и др.         |
-| avatar_url  | varchar  | Ссылка на аватар           |
-| external_id | varchar  | ID в исходной соцсети      |
-| created_at  | timestamp|                            |
-| updated_at  | timestamp|                            |
+| Поле           | Тип      | Описание                      |
+|----------------|----------|-------------------------------|
+| id             | bigserial| PRIMARY KEY                   |
+| name           | varchar  | Название                      |
+| description    | text     | Описание                      |
+| city           | varchar  | Город                         |
+| street         | varchar  | Улица                         |
+| house          | varchar  | Дом/корпус                    |
+| avatar_url     | varchar  | Ссылка на аватар              |
+| image_url      | varchar  | Доп. изображение/постер       |
+| last_checked_at| timestamp| Время последней проверки      |
+| verification_status | varchar | pending/approved/rejected  |
+| is_verified    | boolean  | Верифицировано                |
+| created_at     | timestamp|                               |
+| updated_at     | timestamp|                               |
 
 #### community_social_links
 
-| Поле                 | Тип      | Описание                       |
-|----------------------|----------|--------------------------------|
-| id                   | bigserial| PRIMARY KEY                    |
-| community_id         | bigint   | FK → communities.id            |
-| social_network_id    | bigint   | FK → social_networks.id        |
-| external_community_id| varchar  | ID/slug в соцсети              |
-| url                  | varchar  | Ссылка на профиль              |
-| created_at           | timestamp|                                |
-| updated_at           | timestamp|                                |
+| Поле                  | Тип      | Описание                       |
+|-----------------------|----------|--------------------------------|
+| id                    | bigserial| PRIMARY KEY                    |
+| community_id          | bigint   | FK → communities.id            |
+| social_network_id     | bigint   | FK → social_networks.id        |
+| external_community_id | varchar  | ID/slug в соцсети              |
+| url                   | varchar  | Ссылка на профиль              |
+| created_at            | timestamp|                                |
+| updated_at            | timestamp|                                |
 
 #### community_interest
 
-| Поле         | Тип    | Описание                |
-|--------------|--------|-------------------------|
-| community_id | bigint | FK → communities.id     |
-| interest_id  | bigint | FK → interests.id       |
-| created_at   | timestamp|                       |
-| updated_at   | timestamp|                       |
+| Поле        | Тип    | Описание                |
+|-------------|--------|-------------------------|
+| community_id| bigint | FK → communities.id     |
+| interest_id | bigint | FK → interests.id       |
+| created_at  | timestamp|                       |
+| updated_at  | timestamp|                       |
 **PRIMARY KEY (community_id, interest_id)**
 
 #### social_networks
@@ -122,6 +127,7 @@
 | icon     | varchar  | emoji или URL              |
 | url_mask | varchar  | Шаблон для генерации ссылок|
 | created_at| timestamp|                           |
+| updated_at| timestamp|                           |
 
 ---
 
@@ -152,11 +158,11 @@
 
 #### event_interest
 
-| Поле       | Тип     | Описание                      |
-|------------|---------|-------------------------------|
-| event_id   | bigint  | FK → events.id                |
-| interest_id| bigint  | FK → interests.id             |
-| created_at | timestamp|                              |
+| Поле        | Тип     | Описание                  |
+|-------------|---------|---------------------------|
+| event_id    | bigint  | FK → events.id            |
+| interest_id | bigint  | FK → interests.id         |
+| created_at  | timestamp|                          |
 **PRIMARY KEY (event_id, interest_id)**
 
 #### event_attendees
@@ -234,14 +240,16 @@
 
 ---
 
-## Best practices и особенности
+## Особенности и best practices
 
-- Все ключевые поля имеют уникальные индексы и внешние ключи.
-- Geo-запросы делаются через PostGIS-поле location, быстрые выборки — через STORED lat/lon.
-- Вложения и связи интересов реализованы через morphTo (parent_type/parent_id).
-- junction-таблицы (`event_interest`, `interest_user`, `community_interest`, `interest_links`) — с составными PK.
-- Soft delete в users, events, context_posts (deleted_at).
-- Все временные поля единообразно `*_at`.
+- Все PK — bigserial, все связи через FK с каскадным удалением.
+- Junction-таблицы имеют составные PRIMARY KEY.
+- Soft delete (`deleted_at`) реализован для важных сущностей.
+- MorphTo для универсальных связей (attachments, interest_links).
+- Пространственные индексы для PostGIS и быстрых геозапросов.
+- Адресная и верификационная информация вынесена в `communities`.
+- Все временные поля стандартизированы: `*_at`.
+- Нет дублирующих данных, вся информация по соцсетям — через отдельные связующие таблицы.
 
 ---
 
@@ -260,4 +268,4 @@ WHERE iu.user_id = :user_id;
 -- Получить вложения к событию
 SELECT * FROM attachments
 WHERE parent_type = 'event' AND parent_id = :event_id;
-```
+````
