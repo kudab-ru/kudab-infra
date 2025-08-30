@@ -5,10 +5,19 @@ on:
   push:
     branches: [main]
 
+# (необязательно, но полезно) — не пускать параллельные прод-деплои
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   deploy-api:
     runs-on: ubuntu-latest
     if: github.event.head_commit.message != 'skip deploy'
+
     steps:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
@@ -24,6 +33,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          log-public-key: true
 
       - name: Deploy to server (ssh)
         run: |
@@ -37,7 +47,7 @@ jobs:
             git pull
             git submodule update --init --recursive
 
-            # Пересобираем образы
+            # Пересобираем образы (API соберётся с pcntl согласно Dockerfile)
             docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull
 
             # Ротация :latest -> :previous только для своих сервисов
@@ -91,14 +101,14 @@ jobs:
             set -Eeuo pipefail
             cd ${{ vars.PROD_DIRECTORY }}
 
-            # 1) Миграции
+            # 1) Сначала миграции (чтобы не падал optimize:clear при CACHE_STORE=database)
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan migrate --force
 
-            # 2) Очистка и пересбор кешей
+            # 2) Затем очистка и пересбор кешей
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize:clear
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize
 
-            # 3) Horizon: перезапуск если установлен и pcntl загружен
+            # 3) Horizon: перезапускаем только если пакет есть и pcntl загружен
             if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
               php -r 'require "vendor/autoload.php"; exit(class_exists("Laravel\\Horizon\\Horizon")?0:1);'
             then
@@ -112,10 +122,12 @@ jobs:
             fi
           EOF
 
-      - name: Smoke test (API + frontend, basic auth)
+      - name: Smoke test (API + Frontend)
         env:
           APP_URL: https://kudasobrat.ru
+          # опционально: user:password для Basic Auth
           API_BASIC_AUTH: ${{ secrets.API_BASIC_AUTH }}
+          FRONTEND_BASIC_AUTH: ${{ secrets.FRONTEND_BASIC_AUTH }}
         run: |
           set -Eeuo pipefail
           CURL_OPTS=(-skL --max-time 10 --connect-timeout 5 --retry 24 --retry-delay 5 --retry-connrefused --retry-all-errors)
@@ -123,21 +135,28 @@ jobs:
           fe="$APP_URL/"
 
           echo "::group::API"
-          api_resp="$(curl "${CURL_OPTS[@]}" -u "$API_BASIC_AUTH" -w $'\n%{http_code}' "$api" || true)"
+          api_resp="$(curl "${CURL_OPTS[@]}" ${API_BASIC_AUTH:+-u "$API_BASIC_AUTH"} -w $'\n%{http_code}' "$api" || true)"
           code="${api_resp##*$'\n'}"; body="${api_resp%$'\n'$code}"
           echo "API HTTP: $code"
           printf "%s" "$body" > api_ping.json || true
-          [ "$code" = "200" ] && grep -q '"ok"[[:space:]]*:[[:space:]]*true' api_ping.json || { echo "::error ::API unhealthy: HTTP $code"; exit 1; }
+          [[ "$code" == "200" ]] && grep -q '"ok"[[:space:]]*:[[:space:]]*true' api_ping.json || { echo "::error ::API unhealthy: HTTP $code"; exit 1; }
           echo "::endgroup::"
 
           echo "::group::Frontend"
-          fe_resp="$(curl "${CURL_OPTS[@]}" -H 'Accept: text/html' -w $'\n%{http_code}' "$fe" || true)"
+          fe_resp="$(curl "${CURL_OPTS[@]}" ${FRONTEND_BASIC_AUTH:+-u "$FRONTEND_BASIC_AUTH"} -H 'Accept: text/html' -w $'\n%{http_code}' "$fe" || true)"
           fe_code="${fe_resp##*$'\n'}"; fe_body="${fe_resp%$'\n'$fe_code}"
           echo "FE  HTTP: $fe_code"
-          [ "$fe_code" = "200" ] && printf "%s" "$fe_body" | grep -iq "<html" || { echo "::error ::Frontend unhealthy: HTTP $fe_code"; exit 1; }
+
+          # Если фронт закрыт Basic Auth и секрет не задан — считаем это приемлемым сигналом живости.
+          if [[ "$fe_code" == "401" && -z "${FRONTEND_BASIC_AUTH:-}" ]]; then
+            echo "::notice ::Frontend требует Basic Auth (401). FRONTEND_BASIC_AUTH не задан — трактуем как healthy."
+          else
+            [[ "$fe_code" == "200" || "$fe_code" == "301" || "$fe_code" == "302" ]] && printf "%s" "$fe_body" | grep -iq "<html" \
+              || { echo "::error ::Frontend unhealthy: HTTP $fe_code"; exit 1; }
+          fi
           echo "::endgroup::"
 
-      - name: Dump remote logs on failure
+      - name: Debug on failure (ps + last logs)
         if: failure()
         run: |
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} <<'SSH'
