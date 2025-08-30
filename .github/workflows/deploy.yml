@@ -112,14 +112,47 @@ jobs:
             fi
           EOF
 
-      - name: Smoke test (API + frontend)
+      - name: Smoke test (robust, with retries)
         env:
           APP_URL: https://kudasobrat.ru
         run: |
           set -Eeuo pipefail
-          curl -sk $APP_URL/api/ping | grep -q "\"ok\":true"
-          curl -sk $APP_URL/api/ping | grep -q "\"result\":\"pong\"" || true
-          curl -sk $APP_URL/ | grep -q "<html"
+          api="$APP_URL/api/ping"
+          fe="$APP_URL/"
+          
+          # Единые опции curl: тихо, игнор TLS, следуем редиректам, короткие таймауты, ретраи на все сетевые ошибки
+          CURL_OPTS=(-skL --max-time 10 --connect-timeout 5 --retry 24 --retry-delay 5 --retry-connrefused --retry-all-errors)
+          
+          echo "::group::API"
+          api_resp="$(curl "${CURL_OPTS[@]}" -w '\n%{http_code}' "$api" || true)"
+          api_code="${api_resp##*$'\n'}"
+          api_body="${api_resp%$'\n'$api_code}"
+          echo "API HTTP: $api_code"
+          echo "$api_body" | tee api_ping.json >/dev/null
+          [ "$api_code" = "200" ]
+          echo "$api_body" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'
+          echo "::endgroup::"
+          
+          echo "::group::Frontend"
+          fe_resp="$(curl "${CURL_OPTS[@]}" -H 'Accept: text/html' -w '\n%{http_code}' "$fe" || true)"
+          fe_code="${fe_resp##*$'\n'}"
+          fe_body="${fe_resp%$'\n'$fe_code}"
+          echo "FE  HTTP: $fe_code"
+          [ "$fe_code" = "200" ]
+          printf "%s" "$fe_body" | grep -iq "<html"
+          echo "::endgroup::"
+
+      - name: Dump remote logs on failure
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} '
+            set -Eeuo pipefail
+            cd ${{ vars.PROD_DIRECTORY }}
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+            echo "--- nginx logs (tail 200) ---"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 kudab-nginx || true
+            echo "--- api logs (tail 200) ---"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 kudab-api || true
 
       - name: Rollback all services (ssh)
         if: failure()
