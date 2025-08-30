@@ -28,16 +28,19 @@ jobs:
       - name: Deploy to server (ssh)
         run: |
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
-            set -e
+            set -Eeuo pipefail
             cd ${{ vars.PROD_DIRECTORY }}
+
+            # Обновляем код
             git checkout main
             git rev-parse HEAD > .last_deployed_commit
             git pull
             git submodule update --init --recursive
 
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+            # Пересобираем образы (API соберётся с pcntl согласно Dockerfile)
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull
 
-            # Сохраняем старые образы :latest -> :previous только для своих сервисов
+            # Ротация :latest -> :previous только для своих сервисов
             for service in kudab-api kudab-nginx kudab-frontend kudab-parser; do
               if docker image inspect $service:latest >/dev/null 2>&1; then
                 docker tag $service:latest $service:previous
@@ -45,13 +48,14 @@ jobs:
               fi
             done
 
+            # Тянем только внешние/инфраструктурные образы
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull kudab-db redis swagger
+
+            # Запускаем/обновляем
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
-            timeout=120
-            interval=5
-            elapsed=0
-            services="kudab-nginx kudab-db"
+            # Мини health-wait для критичных зависимостей
+            timeout=120; interval=5; elapsed=0; services="kudab-nginx kudab-db"
             while [ $elapsed -lt $timeout ]; do
               all_healthy=true
               for service in $services; do
@@ -61,12 +65,8 @@ jobs:
                   echo "$service not healthy yet: $status"
                 fi
               done
-              if [ "$all_healthy" = true ]; then
-                echo "All critical services healthy."
-                break
-              fi
-              sleep $interval
-              elapsed=$((elapsed + $interval))
+              [ "$all_healthy" = true ] && echo "All critical services healthy." && break
+              sleep $interval; elapsed=$((elapsed + $interval))
             done
             if [ "$all_healthy" != true ]; then
               echo "::error ::Timeout waiting for containers to become healthy"
@@ -76,6 +76,7 @@ jobs:
               done
               exit 1
             fi
+
             docker image prune -af
           EOF
 
@@ -84,17 +85,38 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} \
           'cd ${{ vars.PROD_DIRECTORY }} && ./scripts/backup_db.sh'
 
-      - name: Run migrations
+      - name: Run migrations (+ cache clear, guard для Horizon)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} << 'EOF'
+            set -Eeuo pipefail
             cd ${{ vars.PROD_DIRECTORY }}
-            ./scripts/migrate.sh
+
+            # 1) Сначала миграции (чтобы не падал optimize:clear при CACHE_STORE=database)
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan migrate --force
+
+            # 2) Затем очистка и пересбор кешей
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize:clear
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize
+
+            # 3) Horizon: перезапускаем только если пакет есть и pcntl загружен
+            if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
+              php -r 'require "vendor/autoload.php"; exit(class_exists("Laravel\\Horizon\\Horizon")?0:1);'
+            then
+              if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
+                php -r 'exit(extension_loaded("pcntl")?0:1);'
+              then
+                docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan horizon:terminate || true
+              else
+                echo "::warning ::Horizon установлен, но расширение pcntl не загружено; пропускаем horizon:terminate"
+              fi
+            fi
           EOF
 
       - name: Smoke test (API + frontend)
         env:
           APP_URL: https://kudasobrat.ru
         run: |
+          set -Eeuo pipefail
           curl -sk $APP_URL/api/ping | grep -q "\"ok\":true"
           curl -sk $APP_URL/api/ping | grep -q "\"result\":\"pong\"" || true
           curl -sk $APP_URL/ | grep -q "<html"
