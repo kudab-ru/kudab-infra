@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code with submodules
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: recursive
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Copy env (если нужно)
@@ -37,7 +37,7 @@ jobs:
             git pull
             git submodule update --init --recursive
 
-            # Пересобираем образы (API соберётся с pcntl согласно Dockerfile)
+            # Пересобираем образы
             docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull
 
             # Ротация :latest -> :previous только для своих сервисов
@@ -91,14 +91,14 @@ jobs:
             set -Eeuo pipefail
             cd ${{ vars.PROD_DIRECTORY }}
 
-            # 1) Сначала миграции (чтобы не падал optimize:clear при CACHE_STORE=database)
+            # 1) Миграции
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan migrate --force
 
-            # 2) Затем очистка и пересбор кешей
+            # 2) Очистка и пересбор кешей
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize:clear
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api php artisan optimize
 
-            # 3) Horizon: перезапускаем только если пакет есть и pcntl загружен
+            # 3) Horizon: перезапуск если установлен и pcntl загружен
             if docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
               php -r 'require "vendor/autoload.php"; exit(class_exists("Laravel\\Horizon\\Horizon")?0:1);'
             then
@@ -112,40 +112,35 @@ jobs:
             fi
           EOF
 
-      - name: Smoke test (robust, with retries)
+      - name: Smoke test (API + frontend, basic auth)
         env:
           APP_URL: https://kudasobrat.ru
+          API_BASIC_AUTH: ${{ secrets.API_BASIC_AUTH }}
         run: |
           set -Eeuo pipefail
+          CURL_OPTS=(-skL --max-time 10 --connect-timeout 5 --retry 24 --retry-delay 5 --retry-connrefused --retry-all-errors)
           api="$APP_URL/api/ping"
           fe="$APP_URL/"
-          
-          # Единые опции curl: тихо, игнор TLS, следуем редиректам, короткие таймауты, ретраи на все сетевые ошибки
-          CURL_OPTS=(-skL --max-time 10 --connect-timeout 5 --retry 24 --retry-delay 5 --retry-connrefused --retry-all-errors)
-          
+
           echo "::group::API"
-          api_resp="$(curl "${CURL_OPTS[@]}" -w '\n%{http_code}' "$api" || true)"
-          api_code="${api_resp##*$'\n'}"
-          api_body="${api_resp%$'\n'$api_code}"
-          echo "API HTTP: $api_code"
-          echo "$api_body" | tee api_ping.json >/dev/null
-          [ "$api_code" = "200" ]
-          echo "$api_body" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'
+          api_resp="$(curl "${CURL_OPTS[@]}" -u "$API_BASIC_AUTH" -w $'\n%{http_code}' "$api" || true)"
+          code="${api_resp##*$'\n'}"; body="${api_resp%$'\n'$code}"
+          echo "API HTTP: $code"
+          printf "%s" "$body" > api_ping.json || true
+          [ "$code" = "200" ] && grep -q '"ok"[[:space:]]*:[[:space:]]*true' api_ping.json || { echo "::error ::API unhealthy: HTTP $code"; exit 1; }
           echo "::endgroup::"
-          
+
           echo "::group::Frontend"
-          fe_resp="$(curl "${CURL_OPTS[@]}" -H 'Accept: text/html' -w '\n%{http_code}' "$fe" || true)"
-          fe_code="${fe_resp##*$'\n'}"
-          fe_body="${fe_resp%$'\n'$fe_code}"
+          fe_resp="$(curl "${CURL_OPTS[@]}" -H 'Accept: text/html' -w $'\n%{http_code}' "$fe" || true)"
+          fe_code="${fe_resp##*$'\n'}"; fe_body="${fe_resp%$'\n'$fe_code}"
           echo "FE  HTTP: $fe_code"
-          [ "$fe_code" = "200" ]
-          printf "%s" "$fe_body" | grep -iq "<html"
+          [ "$fe_code" = "200" ] && printf "%s" "$fe_body" | grep -iq "<html" || { echo "::error ::Frontend unhealthy: HTTP $fe_code"; exit 1; }
           echo "::endgroup::"
 
       - name: Dump remote logs on failure
         if: failure()
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} '
+          ssh -o StrictHostKeyChecking=no ${{ vars.PROD_SSH_USER }}@${{ vars.PROD_SSH_HOST }} <<'SSH'
             set -Eeuo pipefail
             cd ${{ vars.PROD_DIRECTORY }}
             docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
@@ -153,6 +148,7 @@ jobs:
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 kudab-nginx || true
             echo "--- api logs (tail 200) ---"
             docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 kudab-api || true
+          SSH
 
       - name: Rollback all services (ssh)
         if: failure()
