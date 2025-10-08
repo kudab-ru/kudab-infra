@@ -74,3 +74,32 @@ fix-port-conflict:
 	@printf "\033[1;36m♻️  Перезапуск контейнера PostgreSQL...\033[0m\n"
 	@docker restart kudab-db >/dev/null && printf " \033[1;32m✅ Контейнер PostgreSQL успешно перезапущен.\033[0m\n\n"
 	@printf "\033[1;34m╰──────────────────────────────────────────────────────────────────╯\033[0m\n\n"
+
+# -----------------------------
+# Бот (dev) — быстрые проверки
+# -----------------------------
+
+bot-health:
+	@curl -fsS http://127.0.0.1:8000/health && echo
+
+bot-diag:
+	@curl -fsS http://127.0.0.1:8000/diag | jq .
+
+bot-send:
+	@curl -fsS -X POST "http://127.0.0.1:8000/send-test?msg=ok" | jq .
+
+# -----------------------------
+# Бот (prod) — управление вебхуком
+# Требует переменных: BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
+# -----------------------------
+
+webhook-info:
+	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/getWebhookInfo" | jq .
+
+webhook-set:
+	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/setWebhook" \
+	  -d "url=$$WEBHOOK_URL" -d "secret_token=$$WEBHOOK_SECRET" | jq .
+
+webhook-del:
+	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/deleteWebhook" \
+	  -d "drop_pending_updates=true" | jq .

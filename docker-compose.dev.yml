@@ -9,59 +9,62 @@ services:
       - ./services/kudab-api:/var/www/html:rw
       - ./services/kudab-api/vendor:/var/www/html/vendor
       - ./services/kudab-api/storage:/var/www/html/storage
-    # Можно добавить nodemon/hot reload как отдельный сервис если нужно
 
   kudab-parser:
     environment:
-      APP_ENV: development
+      APP_ENV: local
+      QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      REDIS_CLIENT: phpredis
     volumes:
       - ./services/kudab-parser:/var/www/html:rw
       - ./services/kudab-parser/vendor:/var/www/html/vendor
       - ./services/kudab-parser/storage:/var/www/html/storage
-    ports:
-      - "8089:80"          # Только если нужен доступ к Horizon снаружи
     command: >
       sh -c "php artisan migrate --force &&
              php artisan horizon"
+
+  kudab-parser-fpm:
+    environment:
+      APP_ENV: local
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      REDIS_CLIENT: phpredis
+
+  kudab-horizon:
+    environment:
+      APP_ENV: local
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      REDIS_CLIENT: phpredis
 
   kudab-frontend:
     environment:
       NODE_ENV: development
     ports:
-      - "3000:3000"     # Прямой доступ для hot-reload
+      - "3000:3000"
     volumes:
       - ./services/kudab-frontend:/app:rw
       - /app/node_modules
 
-#  kudab-admin:
-#    environment:
-#      NODE_ENV: development
-#    ports:
-#      - "8080:8080"
-#    volumes:
-#      - ./services/kudab-admin:/app:rw
-#      - /app/node_modules
-
   kudab-bot:
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       BOT_ENV: development
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      RUNNER: uvicorn
+    env_file:
+      - ./services/kudab-bot/.env.dev
     volumes:
       - ./services/kudab-bot:/app:rw
+    ports:
+      - "127.0.0.1:8000:8000"
 
-  kudab-publisher:
-    environment:
-      PUBLISHER_ENV: development
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
-    volumes:
-      - ./services/kudab-publisher:/app:rw
 
   kudab-recommendations:
     environment:
@@ -73,7 +76,7 @@ services:
     environment:
       NGINX_ENV: development
     ports:
-      - "8088:80"      # Не мешаем прод-порту
+      - "8088:80"
     volumes:
       - ./services/kudab-nginx/default.dev.conf:/etc/nginx/conf.d/default.conf:ro
 
@@ -98,7 +101,7 @@ services:
     volumes:
       - ./docs/swagger:/swagger:ro
     ports:
-      - "8181:8080"   # наружу для удобного доступа в dev
+      - "8181:8080"
 
 volumes:
   redisdata:

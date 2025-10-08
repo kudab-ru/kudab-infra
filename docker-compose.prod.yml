@@ -21,14 +21,19 @@ services:
 #      NODE_ENV: production
 
   kudab-bot:
-    restart: always
+    env_file:
+      - ./services/kudab-bot/.env
     environment:
       BOT_ENV: production
+      BOT_MODE: webhook
+      RUNNER: gunicorn
+    # порт наружу НЕ публикуем, ходим через nginx внутр. сеть
+    restart: unless-stopped
 
-  kudab-publisher:
-    restart: always
-    environment:
-      PUBLISHER_ENV: production
+#  kudab-publisher:
+#    restart: always
+#    environment:
+#      PUBLISHER_ENV: production
 
   kudab-recommendations:
     restart: always
@@ -47,6 +52,29 @@ services:
       - ./certs/prod:/etc/nginx/certs:ro
     # В продакшене ports остаются стандартными 80/443 (как в базовом файле)
     # Volume только для конфигов и сертификатов (уже задано в базовом)
+
+  kudab-horizon:
+    restart: always
+    environment:
+      APP_ENV: production
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      REDIS_CLIENT: phpredis
+      HORIZON_PREFIX: "kudab_prod_hz:"
+    command: sh -lc "php artisan optimize:clear && php artisan horizon"
+    depends_on:
+      - redis
+      - kudab-db
+
+  scheduler:
+    image: ${PARSER_IMAGE:-kudab-parser}
+    command: sh -lc 'while true; do php artisan schedule:run --no-interaction; sleep 60; done'
+    depends_on:
+      - kudab-horizon
+    environment:
+      APP_ENV: production
 
   kudab-db:
     restart: always
