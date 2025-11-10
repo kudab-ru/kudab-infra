@@ -4,9 +4,12 @@ COMPOSE = docker compose -f docker-compose.yml
 DEV = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
 
-.PHONY: help init dev prod down rebuild logs ps migrate rollback backup
-.PHONY: bot-build bot-build-prod bot-rebuild bot-restart bot-logs
-.PHONY: bot-apply-prod webhook-refresh bot-diag-prod nginx-reload
+.PHONY: help init dev prod down rebuild logs ps migrate rollback backup fix-port-conflict
+.PHONY: bot-health bot-diag bot-send
+.PHONY: bot-build bot-rebuild bot-build-prod bot-restart bot-logs
+.PHONY: webhook-info webhook-set webhook-del webhook-refresh
+.PHONY: snapshot-api snapshot-parser
+.PHONY: bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -115,20 +118,20 @@ bot-logs:
 	$(COMPOSE) logs -f --tail=200 kudab-bot
 
 # -----------------------------
-# Бот (prod) — управление вебхуком
+# Бот (prod) — управление вебхуком (без jq)
 # Требует переменных: BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
 # -----------------------------
 
 webhook-info:
-	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/getWebhookInfo" | jq .
+	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/getWebhookInfo" | python3 -m json.tool
 
 webhook-set:
 	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/setWebhook" \
-	  -d "url=$$WEBHOOK_URL" -d "secret_token=$$WEBHOOK_SECRET" | jq .
+	  -d "url=$$WEBHOOK_URL" -d "secret_token=$$WEBHOOK_SECRET" | python3 -m json.tool
 
 webhook-del:
 	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/deleteWebhook" \
-	  -d "drop_pending_updates=true" | jq .
+	  -d "drop_pending_updates=true" | python3 -m json.tool
 
 bot-help:
 	@printf "\nЗапусти в чате: /help, /events today, /events city 1\n"
@@ -139,17 +142,27 @@ snapshot-api:
 snapshot-parser:
 	./tools/snapshot_kudab.sh kudab-parser
 
-# --- PROD: быстрый деплой только бота ---
+# --- PROD: быстрый деплой только бота (сборка + рестарт контейнера) ---
 bot-apply-prod:
 	$(PROD) build kudab-bot
 	$(PROD) up -d --no-deps kudab-bot
 
+# --- PROD: diag/health ИЗНУТРИ контейнера (без проброса порта) ---
+bot-health-prod:
+	$(PROD) exec kudab-bot sh -lc 'curl -fsS http://localhost:8000/health && echo'
+
+bot-diag-prod:
+	$(PROD) exec kudab-bot sh -lc "curl -fsS http://localhost:8000/diag | python3 -m json.tool"
+
 # --- PROD: перезалить вебхук (удалить + поставить) ---
 webhook-refresh: webhook-del webhook-set
 
-# --- PROD: diag изнутри контейнера бота ---
-bot-diag-prod:
-	$(PROD) exec kudab-bot curl -fsS http://localhost:8000/diag | jq .
+# --- Быстрый релиз под prod: собрать, поднять, обновить вебхук, показать diag ---
+bot-release:
+	$(PROD) build kudab-bot
+	$(PROD) up -d --no-deps kudab-bot
+	$(MAKE) webhook-refresh
+	$(MAKE) bot-diag-prod
 
 # --- Nginx reload на всякий случай ---
 nginx-reload:
