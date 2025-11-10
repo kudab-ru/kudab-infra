@@ -15,10 +15,10 @@ services:
     environment:
       NODE_ENV: production
 
-#  kudab-admin:
-#    restart: always
-#    environment:
-#      NODE_ENV: production
+  # kudab-admin:
+  #   restart: always
+  #   environment:
+  #     NODE_ENV: production
 
   kudab-bot:
     env_file:
@@ -30,15 +30,10 @@ services:
     # порт наружу НЕ публикуем, ходим через nginx внутр. сеть
     restart: unless-stopped
 
-#  kudab-publisher:
-#    restart: always
-#    environment:
-#      PUBLISHER_ENV: production
-
-  kudab-recommendations:
-    restart: always
-    environment:
-      RECOMMEND_ENV: production
+  # kudab-publisher:
+  #   restart: always
+  #   environment:
+  #     PUBLISHER_ENV: production
 
   kudab-nginx:
     restart: always

@@ -5,6 +5,8 @@ DEV = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
 
 .PHONY: help init dev prod down rebuild logs ps migrate rollback backup
+.PHONY: bot-build bot-build-prod bot-rebuild bot-restart bot-logs
+.PHONY: bot-apply-prod webhook-refresh bot-diag-prod nginx-reload
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -89,6 +91,30 @@ bot-send:
 	@curl -fsS -X POST "http://127.0.0.1:8000/send-test?msg=ok" | jq .
 
 # -----------------------------
+# Бот (образы/контейнер)
+# -----------------------------
+
+## Собрать ТОЛЬКО образ бота (dev-слой)
+bot-build:
+	$(DEV) build kudab-bot
+
+## Пересобрать ТОЛЬКО образ бота (без кэша, с pull)
+bot-rebuild:
+	$(DEV) build --pull --no-cache kudab-bot
+
+## Собрать ТОЛЬКО образ бота под prod-слой (без запуска)
+bot-build-prod:
+	$(PROD) build kudab-bot
+
+## Перезапустить контейнер бота (без депсов)
+bot-restart:
+	$(DEV) up -d --no-deps kudab-bot
+
+## Логи бота
+bot-logs:
+	$(COMPOSE) logs -f --tail=200 kudab-bot
+
+# -----------------------------
 # Бот (prod) — управление вебхуком
 # Требует переменных: BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
 # -----------------------------
@@ -103,3 +129,28 @@ webhook-set:
 webhook-del:
 	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/deleteWebhook" \
 	  -d "drop_pending_updates=true" | jq .
+
+bot-help:
+	@printf "\nЗапусти в чате: /help, /events today, /events city 1\n"
+
+snapshot-api:
+	./tools/snapshot_kudab.sh kudab-api
+
+snapshot-parser:
+	./tools/snapshot_kudab.sh kudab-parser
+
+# --- PROD: быстрый деплой только бота ---
+bot-apply-prod:
+	$(PROD) build kudab-bot
+	$(PROD) up -d --no-deps kudab-bot
+
+# --- PROD: перезалить вебхук (удалить + поставить) ---
+webhook-refresh: webhook-del webhook-set
+
+# --- PROD: diag изнутри контейнера бота ---
+bot-diag-prod:
+	$(PROD) exec kudab-bot curl -fsS http://localhost:8000/diag | jq .
+
+# --- Nginx reload на всякий случай ---
+nginx-reload:
+	$(PROD) exec kudab-nginx nginx -s reload

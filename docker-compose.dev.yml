@@ -65,13 +65,6 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
-
-  kudab-recommendations:
-    environment:
-      RECOMMEND_ENV: development
-    volumes:
-      - ./services/kudab-recommendations:/app:rw
-
   kudab-nginx:
     environment:
       NGINX_ENV: development

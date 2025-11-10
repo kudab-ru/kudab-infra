@@ -67,8 +67,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kudab-recommendations:
-        condition: service_started
 
   kudab-parser:
     environment:
@@ -192,16 +190,6 @@ services:
 #    depends_on:
 #      - kudab-api
 
-  kudab-recommendations:
-    image: kudab-recommendations:latest
-    build: ./services/kudab-recommendations
-    container_name: ${KUDAB_RECOMMENDATIONS_CONTAINER:-kudab-recommendations}
-    env_file: .env
-    expose:
-      - "${RECOMMEND_PORT:-8081}"
-    volumes:
-      - ./services/kudab-recommendations:/app:rw
-
   kudab-nginx:
     image: kudab-nginx:latest
     build: ./services/kudab-nginx
@@ -218,6 +206,7 @@ services:
     depends_on:
       - kudab-api
       - kudab-frontend
+      - kudab-bot
 #      - kudab-admin
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/ && curl -f http://localhost/api/ping"]
