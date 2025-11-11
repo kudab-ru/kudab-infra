@@ -119,18 +119,21 @@ bot-logs:
 
 # -----------------------------
 # Бот (prod) — управление вебхуком (без jq)
-# Требует переменных: BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
+# Теперь автоматически читаем services/kudab-bot/.env
 # -----------------------------
 
 webhook-info:
-	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/getWebhookInfo" | python3 -m json.tool
+	@set -a; . services/kudab-bot/.env; set +a; \
+	curl -s "https://api.telegram.org/bot$$BOT_TOKEN/getWebhookInfo" | python3 -m json.tool
 
 webhook-set:
-	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/setWebhook" \
+	@set -a; . services/kudab-bot/.env; set +a; \
+	curl -s "https://api.telegram.org/bot$$BOT_TOKEN/setWebhook" \
 	  -d "url=$$WEBHOOK_URL" -d "secret_token=$$WEBHOOK_SECRET" | python3 -m json.tool
 
 webhook-del:
-	@curl -s "https://api.telegram.org/bot$$BOT_TOKEN/deleteWebhook" \
+	@set -a; . services/kudab-bot/.env; set +a; \
+	curl -s "https://api.telegram.org/bot$$BOT_TOKEN/deleteWebhook" \
 	  -d "drop_pending_updates=true" | python3 -m json.tool
 
 bot-help:

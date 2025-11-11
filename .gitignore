@@ -3,4 +3,4 @@
 backups/*
 !backups/.gitkeep
 .last_deployed_commit
-#.github/workflows
+#.github/workflowscerts/
