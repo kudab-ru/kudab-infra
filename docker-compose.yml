@@ -1,5 +1,6 @@
 services:
   kudab-parser-scheduler:
+    profiles: ["dev"]
     image: kudab-parser:latest
     user: "${UID}:${GID}"
     build: ./services/kudab-parser
@@ -24,6 +25,7 @@ services:
     restart: unless-stopped
 
   kudab-api-scheduler:
+    profiles: ["dev"]
     image: kudab-api:latest
     user: "${UID}:${GID}"
     build: ./services/kudab-api

@@ -170,3 +170,4 @@ bot-release:
 # --- Nginx reload на всякий случай ---
 nginx-reload:
 	$(PROD) exec kudab-nginx nginx -s reload
+
