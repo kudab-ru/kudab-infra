@@ -1,4 +1,4 @@
-# Makefile для kudasobrat.ru (v1.0.1)
+# Makefile для kudasobrat.ru (v1.0.2)
 
 COMPOSE = docker compose -f docker-compose.yml
 DEV = $(COMPOSE) -f docker-compose.dev.yml
@@ -87,11 +87,11 @@ fix-port-conflict:
 bot-health:
 	@curl -fsS http://127.0.0.1:8000/health && echo
 
-bot-diag:
-	@curl -fsS http://127.0.0.1:8000/diag | jq .
+bot-diag: # [fix] убран jq, формат через python
+	@curl -fsS http://127.0.0.1:8000/diag | python3 -m json.tool || true
 
-bot-send:
-	@curl -fsS -X POST "http://127.0.0.1:8000/send-test?msg=ok" | jq .
+bot-send: # [fix] убран jq, формат через python
+	@curl -fsS -X POST "http://127.0.0.1:8000/send-test?msg=ok" | python3 -m json.tool || true
 
 # -----------------------------
 # Бот (образы/контейнер)
@@ -147,12 +147,15 @@ bot-apply-prod:
 	$(PROD) build kudab-bot
 	$(PROD) up -d --no-deps kudab-bot
 
-# --- PROD: diag/health ИЗНУТРИ контейнера (без проброса порта) ---
+# --- PROD: diag/health ИЗНУТРИ контейнера ---
 bot-health-prod:
 	$(PROD) exec kudab-bot sh -lc 'curl -fsS http://localhost:8000/health && echo'
 
-bot-diag-prod:
-	$(PROD) exec kudab-bot sh -lc "curl -fsS http://localhost:8000/diag | python3 -m json.tool"
+bot-diag-prod: # [fix] убран неверный пайп; /diag опционален, /health обязателен
+	$(PROD) exec kudab-bot sh -lc '\
+	  (curl -fsS http://localhost:8000/diag | python3 -m json.tool || echo "[warn] /diag not available"); \
+	  echo; \
+	  curl -fsS http://localhost:8000/health && echo'
 
 # --- PROD: перезалить вебхук (удалить + поставить) ---
 webhook-refresh: webhook-del webhook-set
