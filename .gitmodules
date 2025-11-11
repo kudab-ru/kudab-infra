@@ -15,9 +15,6 @@
 [submodule "services/kudab-publisher"]
 	path = services/kudab-publisher
 	url = git@github.com:kudab-ru/kudab-publisher.git
-[submodule "services/kudab-admin"]
-    path = services/kudab-admin
-    url = git@github.com:kudab-ru/kudab-admin.git
 [submodule "services/kudab-recommendations"]
     path = services/kudab-recommendations
     url = git@github.com:kudab-ru/kudab-recommendations.git
