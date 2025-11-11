@@ -3,4 +3,7 @@
 backups/*
 !backups/.gitkeep
 .last_deployed_commit
-#.github/workflows
+#.github/workflowsservices/kudab-admin/
+services/kudab-publisher/
+**/__pycache__/
+*.pyc
