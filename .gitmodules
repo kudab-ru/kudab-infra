@@ -4,6 +4,7 @@
 [submodule "services/kudab-bot"]
 	path = services/kudab-bot
 	url = git@github.com:kudab-ru/kudab-bot.git
+	branch = remotes/origin/refactoring/base
 [submodule "services/kudab-frontend"]
 	path = services/kudab-frontend
 	url = git@github.com:kudab-ru/kudab-frontend.git
