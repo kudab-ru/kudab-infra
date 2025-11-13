@@ -1,41 +1,55 @@
-# Makefile для kudasobrat.ru (v1.0.2)
+# Makefile для kudasobrat.ru (v1.1.2)
 
 COMPOSE = docker compose -f docker-compose.yml
-DEV = $(COMPOSE) -f docker-compose.dev.yml
+DEV  = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
 
-.PHONY: help init dev prod down rebuild logs ps migrate rollback backup fix-port-conflict
-.PHONY: bot-health bot-diag bot-send
-.PHONY: bot-build bot-rebuild bot-build-prod bot-restart bot-logs
-.PHONY: webhook-info webhook-set webhook-del webhook-refresh
+.PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
+.PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
+.PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
-.PHONY: bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload
+.PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
+.PHONY: mods-status mods-sync-dev
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
 	@printf " \033[1;32m  Доступные команды для управления инфраструктурой проекта\033[0m\n"
 	@printf " \033[90m  Используйте \033[1;37mmake <команда>\033[0m\033[90m для быстрого запуска задач\033[0m\n"
 	@printf "\033[1;34m╰──────────────────────────────────────────────────────────────╯\033[0m\n\n"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "init"        "🔧  Клонирование подмодулей и первичная инициализация"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"         "🧪  Запуск DEV окружения (hot-reload, маунты)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"        "🚀  Продакшен-режим с SSL и CI/CD"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "rebuild"     "🔁  Пересборка всех сервисов (build --no-cache)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "down"        "🛑  Остановить и удалить все контейнеры"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "logs"        "📜  Просмотр логов всех сервисов (tail -f)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "ps"          "🔍  Текущий статус всех контейнеров"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"     "📂  Artisan migrate в контейнере API"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"    "⏪  Откат версии через scripts/rollback.sh"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"      "💾  Ручной backup БД через scripts/backup_db.sh"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "init"          "🔧  Клонирование подмодулей и первичная инициализация"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"           "🧪  Запуск DEV окружения (hot-reload, маунты)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "rebuild"       "🔁  Пересборка всех сервисов (no-cache)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "down"          "🛑  Остановить и удалить все контейнеры"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "logs"          "📜  Хвост логов всех сервисов (tail -f)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "ps"            "🔍  Статус всех контейнеров"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"        "💾  Ручной backup БД через scripts/backup_db.sh"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "nginx-test"    "🧪  Проверить синтаксис конфигурации nginx (prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-release"   "🏷  Создать infra-тэг rel-<ENV>-YYYYMMDD-SS (из текущей ветки)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tags-lint"     "🧹  Показать некондиционные тэги"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-del"       "🗑  Удалить тэг локально+remote (TAG=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-retag"     "🔁  Перетегировать старый тэг в канон (SRC=..., ENV=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-move"      "🎯  Переместить существующий тэг на REF (TAG=..., REF=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулях"
 	@printf "\n"
 
 init:
 	git submodule update --init --recursive
 
 dev:
-	$(DEV) up -d --build
+	$(DEV) up -d --build --remove-orphans
 
 prod:
-	$(PROD) up -d --build
+	$(PROD) up -d --build --remove-orphans
+
+prod-service:
+	@test -n "$(SVC)" || (echo "SVC is required: make prod-service SVC=<service-name>"; exit 1)
+	$(PROD) up -d --no-deps --build $(SVC)
 
 rebuild:
 	$(COMPOSE) down
@@ -53,6 +67,9 @@ ps:
 
 migrate:
 	docker exec -it kudab-api php artisan migrate
+
+migrate-prod:
+	$(PROD) exec kudab-api php artisan migrate --force
 
 rollback:
 	bash scripts/rollback.sh
@@ -87,38 +104,33 @@ fix-port-conflict:
 bot-health:
 	@curl -fsS http://127.0.0.1:8000/health && echo
 
-bot-diag: # [fix] убран jq, формат через python
+bot-diag:
 	@curl -fsS http://127.0.0.1:8000/diag | python3 -m json.tool || true
 
-bot-send: # [fix] убран jq, формат через python
+bot-send:
 	@curl -fsS -X POST "http://127.0.0.1:8000/send-test?msg=ok" | python3 -m json.tool || true
 
 # -----------------------------
 # Бот (образы/контейнер)
 # -----------------------------
 
-## Собрать ТОЛЬКО образ бота (dev-слой)
 bot-build:
 	$(DEV) build kudab-bot
 
-## Пересобрать ТОЛЬКО образ бота (без кэша, с pull)
 bot-rebuild:
 	$(DEV) build --pull --no-cache kudab-bot
 
-## Собрать ТОЛЬКО образ бота под prod-слой (без запуска)
 bot-build-prod:
 	$(PROD) build kudab-bot
 
-## Перезапустить контейнер бота (без депсов)
 bot-restart:
 	$(DEV) up -d --no-deps kudab-bot
 
-## Логи бота
 bot-logs:
 	$(COMPOSE) logs -f --tail=200 kudab-bot
 
 # -----------------------------
-# Бот (prod) — управление вебхуком (авточтение .env бота)
+# Бот (prod) — вебхук
 # -----------------------------
 
 webhook-info:
@@ -144,32 +156,109 @@ snapshot-api:
 snapshot-parser:
 	./tools/snapshot_kudab.sh kudab-parser
 
-# --- PROD: быстрый деплой только бота (сборка + рестарт контейнера) ---
+# --- PROD: быстрый деплой только бота ---
 bot-apply-prod:
 	$(PROD) build kudab-bot
 	$(PROD) up -d --no-deps kudab-bot
 
-# --- PROD: diag/health ИЗНУТРИ контейнера ---
+# --- PROD: diag/health изнутри контейнера ---
 bot-health-prod:
 	$(PROD) exec kudab-bot sh -lc 'curl -fsS http://localhost:8000/health && echo'
 
-bot-diag-prod: # [fix] убран неверный пайп; /diag опционален, /health обязателен
+bot-diag-prod:
 	$(PROD) exec kudab-bot sh -lc '\
 	  (curl -fsS http://localhost:8000/diag | python3 -m json.tool || echo "[warn] /diag not available"); \
 	  echo; \
 	  curl -fsS http://localhost:8000/health && echo'
 
-# --- PROD: перезалить вебхук (удалить + поставить) ---
+# --- PROD: перезалить вебхук ---
 webhook-refresh: webhook-del webhook-set
 
-# --- Быстрый релиз под prod: собрать, поднять, обновить вебхук, показать diag ---
+# --- Быстрый релиз под prod ---
 bot-release:
 	$(PROD) build kudab-bot
 	$(PROD) up -d --no-deps kudab-bot
 	$(MAKE) webhook-refresh
 	$(MAKE) bot-diag-prod
 
-# --- Nginx reload на всякий случай ---
+# --- Nginx ---
 nginx-reload:
 	$(PROD) exec kudab-nginx nginx -s reload
 
+nginx-test:
+	$(PROD) exec kudab-nginx nginx -t
+
+# -----------------------------
+# Infra: тэги (канон rel-<env>-YYYYMMDD-SS)
+# -----------------------------
+
+tag-release:
+	@if [ -z "$$ENV" ]; then echo "ENV not set (use ENV=prod|stage|dev)"; exit 1; fi; \
+	BRANCH=$${BRANCH:-$$(git rev-parse --abbrev-ref HEAD)}; \
+	echo "Tagging from branch: $$BRANCH"; \
+	git switch $$BRANCH; \
+	git pull --ff-only; \
+	git submodule status --recursive; \
+	DATE=$$(TZ=UTC date +%Y%m%d); \
+	SEQ=$$(git tag -l "rel-$$ENV-$$DATE-*" | sed -E 's/.*-([0-9]+)(-.+)?$$/\1/' | sort -n | tail -1 | awk '{print ($$1==""?0:$$1+1)}'); \
+	TAG="rel-$$ENV-$$DATE-$$(printf '%02d' "$$SEQ")"; \
+	git tag -a "$$TAG" -m "infra: $$TAG — фиксация подмодулей (@$$BRANCH)"; \
+	git push origin "$$TAG"; \
+	echo "$$TAG"
+
+tags-lint:
+	@echo "Non-canonical tags:"; \
+	git tag -l | grep -Ev '^rel-(prod|stage|dev)-[0-9]{8}-[0-9]{2}$$' || echo "OK"
+
+tag-del:
+	@test -n "$(TAG)" || (echo "TAG is required (make tag-del TAG=<name>)"; exit 1)
+	@git push origin :refs/tags/$(TAG) || true
+	@git tag -d $(TAG) || true
+
+tag-retag:
+	@test -n "$(SRC)" || (echo "SRC (old tag) is required"; exit 1)
+	@test -n "$(ENV)" || (echo "ENV=prod|stage|dev is required"; exit 1)
+	@COMMIT=$$(git rev-list -n1 "$(SRC)"); \
+	DATE=$$(git show -s --format=%cd --date=format:%Y%m%d $$COMMIT); \
+	SEQ=$$(git tag -l "rel-$(ENV)-$$DATE-*" | sed -E 's/.*-([0-9]+)$$/\1/' | sort -n | tail -1 | awk '{print ($$1==""?0:$$1+1)}'); \
+	NEW=rel-$(ENV)-$$DATE-$$(printf '%02d' "$$SEQ"); \
+	git tag -a "$$NEW" "$$COMMIT" -m "infra: retag $(SRC) -> $$NEW"; \
+	git push origin "$$NEW"; \
+	git push origin :refs/tags/$(SRC) || true; \
+	git tag -d $(SRC) || true; \
+	echo $$NEW
+
+# Переместить существующий тэг на указанный REF (по умолчанию HEAD)
+tag-move:
+	@test -n "$(TAG)" || (echo "TAG is required (make tag-move TAG=<name> [REF=<ref>])"; exit 1)
+	@REF=$${REF:-$$(git rev-parse HEAD)}; \
+	git tag -f -a "$(TAG)" -m "infra: move $(TAG) -> $$REF" "$$REF"; \
+	git push origin :refs/tags/$(TAG); \
+	git push origin $(TAG)
+
+# Починить origin/HEAD у сабмодулей (если где-то не задан и ломает команды)
+submodules-fix-head:
+	@git submodule foreach --recursive 'git remote set-head origin -a || true'
+
+# -----------------------------
+# Подмодули: диагностика / синк
+# -----------------------------
+
+mods-status:
+	@git submodule foreach --recursive '\
+	  echo "== $$path =="; \
+	  git fetch --all --tags >/dev/null 2>&1; \
+	  echo -n "branch: "; git rev-parse --abbrev-ref HEAD; \
+	  if git show-ref --quiet refs/remotes/origin/dev; then \
+	    echo -n "ahead/behind vs origin/dev:  "; git rev-list --left-right --count origin/dev...HEAD; \
+	  else echo "no origin/dev"; fi; \
+	  if git show-ref --quiet refs/remotes/origin/main; then \
+	    echo -n "main..dev: "; git rev-list --left-right --count origin/main...dev 2>/dev/null || echo "n/a"; \
+	  fi; echo;'
+
+mods-sync-dev:
+	@git submodule foreach --recursive '\
+	  git fetch --all --tags >/dev/null 2>&1; \
+	  if git show-ref --verify --quiet refs/heads/dev; then git switch dev; else git switch -c dev origin/main; fi; \
+	  git merge --ff-only origin/main || git reset --hard origin/main; \
+	  git push -u origin dev || git push --force-with-lease origin dev;'
