@@ -155,11 +155,32 @@ services:
     environment:
       BOT_ENV: ${BOT_ENV:-production}
       RUNNER: gunicorn
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
     depends_on:
       - kudab-db
       - redis
     healthcheck:
       test: [ "CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1" ]
+    restart: unless-stopped
+
+  kudab-bot-cron:
+    build:
+      context: ./services/kudab-bot
+      dockerfile: Dockerfile
+    image: kudab-bot:latest
+    depends_on:
+      - kudab-api    # т.к. BroadcastClient ходит в API
+      - kudab-db
+      - redis
+    # один раз в минуту дёргаем наш cron-скрипт
+    command: >
+      sh -c "
+        echo '[bot-cron] starting loop';
+        while true; do
+          python -m app.bot.cron.run_single_broadcasts || echo '[bot-cron] run failed';
+          sleep 60;
+        done
+      "
     restart: unless-stopped
 
   # ------------------------------- Nginx -------------------------------
