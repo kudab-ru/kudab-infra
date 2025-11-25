@@ -116,7 +116,24 @@ services:
       BOT_ENV: production
       BOT_MODE: webhook
       RUNNER: gunicorn
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
     restart: unless-stopped
+
+  kudab-bot-cron:
+    image: kudab-bot:latest
+    env_file:
+      - ./services/kudab-bot/.env
+    environment:
+      BOT_ENV: production
+      BOT_MODE: webhook
+      RUNNER: cron
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+    depends_on:
+      - kudab-api
+      - kudab-db
+      - redis
+    command: sh -lc 'while true; do python -m app.bot.cron.run_single_broadcasts; sleep 60; done'
+    restart: always
 
   kudab-nginx:
     restart: always

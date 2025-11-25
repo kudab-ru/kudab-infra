@@ -58,12 +58,23 @@ services:
     environment:
       BOT_ENV: development
       RUNNER: uvicorn
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
     env_file:
       - ./services/kudab-bot/.env.dev
     volumes:
       - ./services/kudab-bot:/app:rw
     ports:
       - "127.0.0.1:8000:8000"
+
+  kudab-bot-cron:
+    env_file:
+      - ./services/kudab-bot/.env.dev
+    environment:
+      BOT_ENV: development
+      RUNNER: cron
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+    volumes:
+      - ./services/kudab-bot:/app:rw
 
   kudab-nginx:
     environment:
