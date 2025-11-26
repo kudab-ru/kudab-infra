@@ -4,12 +4,18 @@ COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
 
+# --- Superadmin (telegram) ---------------------------------------------------
+TG_SUPERADMIN    ?=
+SUPERADMIN_EMAIL ?= dev-superadmin@example.test
+SUPERADMIN_NAME  ?= Dev Superadmin
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
 .PHONY: mods-status mods-sync-dev
+.PHONY: superadmin
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -28,6 +34,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"        "💾  Ручной backup БД через scripts/backup_db.sh"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "superadmin"    "👑  Ensure супер-админ в DEV (TG_SUPERADMIN=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "nginx-test"    "🧪  Проверить синтаксис конфигурации nginx (prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-release"   "🏷  Создать infra-тэг rel-<ENV>-YYYYMMDD-SS (из текущей ветки)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tags-lint"     "🧹  Показать некондиционные тэги"
@@ -76,6 +83,16 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# -----------------------------
+# Superadmin (Telegram -> User)
+# -----------------------------
+
+superadmin:
+	@test -n "$(TG_SUPERADMIN)" || (echo "TG_SUPERADMIN is required: make superadmin TG_SUPERADMIN=<telegram-id-or-username>"; exit 1)
+	$(DEV) exec kudab-api php artisan bot:superadmin $(TG_SUPERADMIN) \
+		--email="$(SUPERADMIN_EMAIL)" \
+		--name="$(SUPERADMIN_NAME)"
 
 fix-port-conflict:
 	@printf "\n\033[1;34m╭─────────────────────[ 🔧 FIX PORT CONFLICT ]──────────────────────╮\033[0m\n\n"
