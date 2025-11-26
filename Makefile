@@ -1,15 +1,21 @@
-# Makefile для kudasobrat.ru (v1.1.0)
+# Makefile для kudasobrat.ru (v1.1.2)
 
 COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
 
+# --- Superadmin (telegram) ---------------------------------------------------
+TG_SUPERADMIN    ?=
+SUPERADMIN_EMAIL ?= dev-superadmin@example.test
+SUPERADMIN_NAME  ?= Dev Superadmin
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
-.PHONY: tag-release tags-lint tag-del tag-retag
+.PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
 .PHONY: mods-status mods-sync-dev
+.PHONY: superadmin
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -28,11 +34,13 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"        "💾  Ручной backup БД через scripts/backup_db.sh"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "superadmin"    "👑  Ensure супер-админ в DEV (TG_SUPERADMIN=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "nginx-test"    "🧪  Проверить синтаксис конфигурации nginx (prod)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-release"   "🏷  Создать infra-тэг rel-<ENV>-YYYYMMDD-SS"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-release"   "🏷  Создать infra-тэг rel-<ENV>-YYYYMMDD-SS (из текущей ветки)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tags-lint"     "🧹  Показать некондиционные тэги"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-del"       "🗑  Удалить тэг локально+remote (TAG=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-retag"     "🔁  Перетегировать старый тэг в канон (SRC=..., ENV=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-move"      "🎯  Переместить существующий тэг на REF (TAG=..., REF=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулях"
 	@printf "\n"
@@ -75,6 +83,16 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# -----------------------------
+# Superadmin (Telegram -> User)
+# -----------------------------
+
+superadmin:
+	@test -n "$(TG_SUPERADMIN)" || (echo "TG_SUPERADMIN is required: make superadmin TG_SUPERADMIN=<telegram-id-or-username>"; exit 1)
+	$(DEV) exec kudab-api php artisan bot:superadmin $(TG_SUPERADMIN) \
+		--email="$(SUPERADMIN_EMAIL)" \
+		--name="$(SUPERADMIN_NAME)"
 
 fix-port-conflict:
 	@printf "\n\033[1;34m╭─────────────────────[ 🔧 FIX PORT CONFLICT ]──────────────────────╮\033[0m\n\n"
@@ -193,12 +211,15 @@ nginx-test:
 
 tag-release:
 	@if [ -z "$$ENV" ]; then echo "ENV not set (use ENV=prod|stage|dev)"; exit 1; fi; \
-	git checkout main && git pull --ff-only; \
+	BRANCH=$${BRANCH:-$$(git rev-parse --abbrev-ref HEAD)}; \
+	echo "Tagging from branch: $$BRANCH"; \
+	git switch $$BRANCH; \
+	git pull --ff-only; \
 	git submodule status --recursive; \
 	DATE=$$(TZ=UTC date +%Y%m%d); \
 	SEQ=$$(git tag -l "rel-$$ENV-$$DATE-*" | sed -E 's/.*-([0-9]+)(-.+)?$$/\1/' | sort -n | tail -1 | awk '{print ($$1==""?0:$$1+1)}'); \
 	TAG="rel-$$ENV-$$DATE-$$(printf '%02d' "$$SEQ")"; \
-	git tag -a "$$TAG" -m "infra: $$TAG — фиксация подмодулей"; \
+	git tag -a "$$TAG" -m "infra: $$TAG — фиксация подмодулей (@$$BRANCH)"; \
 	git push origin "$$TAG"; \
 	echo "$$TAG"
 
@@ -223,6 +244,18 @@ tag-retag:
 	git push origin :refs/tags/$(SRC) || true; \
 	git tag -d $(SRC) || true; \
 	echo $$NEW
+
+# Переместить существующий тэг на указанный REF (по умолчанию HEAD)
+tag-move:
+	@test -n "$(TAG)" || (echo "TAG is required (make tag-move TAG=<name> [REF=<ref>])"; exit 1)
+	@REF=$${REF:-$$(git rev-parse HEAD)}; \
+	git tag -f -a "$(TAG)" -m "infra: move $(TAG) -> $$REF" "$$REF"; \
+	git push origin :refs/tags/$(TAG); \
+	git push origin $(TAG)
+
+# Починить origin/HEAD у сабмодулей (если где-то не задан и ломает команды)
+submodules-fix-head:
+	@git submodule foreach --recursive 'git remote set-head origin -a || true'
 
 # -----------------------------
 # Подмодули: диагностика / синк
