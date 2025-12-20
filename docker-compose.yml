@@ -114,6 +114,9 @@ services:
     volumes:
       - ./services/kudab-parser:/var/www/html:rw
     environment:
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp
+      PSYSH_CONFIG_DIR: /tmp/psysh
       APP_ENV: local
       QUEUE_CONNECTION: redis
       REDIS_CLIENT: phpredis

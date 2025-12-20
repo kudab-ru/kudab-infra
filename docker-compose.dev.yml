@@ -22,9 +22,6 @@ services:
       - ./services/kudab-parser:/var/www/html:rw
       - ./services/kudab-parser/vendor:/var/www/html/vendor
       - ./services/kudab-parser/storage:/var/www/html/storage
-    command: >
-      sh -c "php artisan migrate --force &&
-             php artisan horizon"
 
   kudab-parser-fpm:
     environment:
@@ -43,6 +40,7 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
       REDIS_CLIENT: phpredis
+    command: sh -lc "php artisan migrate --force && php artisan optimize:clear && php artisan horizon"
 
   kudab-frontend:
     environment:
