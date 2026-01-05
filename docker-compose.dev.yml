@@ -33,6 +33,10 @@ services:
       REDIS_CLIENT: phpredis
 
   kudab-horizon:
+    volumes:
+      - ./services/kudab-parser:/var/www/html:rw
+      - ./services/kudab-parser/vendor:/var/www/html/vendor
+      - ./services/kudab-parser/storage:/var/www/html/storage
     environment:
       APP_ENV: local
       QUEUE_CONNECTION: redis

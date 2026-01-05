@@ -1,4 +1,4 @@
-# Makefile для kudasobrat.ru (v1.1.2)
+# Makefile для kudasobrat.ru (v1.1.2 + reindex fixes)
 
 COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml
@@ -9,6 +9,29 @@ TG_SUPERADMIN    ?=
 SUPERADMIN_EMAIL ?= dev-superadmin@example.test
 SUPERADMIN_NAME  ?= Dev Superadmin
 
+# --- Services (DEV) ----------------------------------------------------------
+HZ_SVC          ?= kudab-horizon
+API_SVC         ?= kudab-api
+DB_SVC          ?= kudab-db
+PARSER_CLI_SVC  ?= kudab-parser
+
+# -----------------------------
+# LLM / Parser: one-button dev smoke test
+# -----------------------------
+
+# PROMPT_VER берём из .env (LLM_EVENTS_PROMPT_VERSION), но можно переопределить make PROMPT_VER=...
+ENV_PROMPT_VER := $(shell sed -n 's/^LLM_EVENTS_PROMPT_VERSION=//p' .env 2>/dev/null | head -n 1 | tr -d '\r')
+PROMPT_VER   ?= $(if $(strip $(ENV_PROMPT_VER)),$(strip $(ENV_PROMPT_VER)),v5)
+
+BENCH_LIMIT  ?= 50
+BENCH_FILE   ?= llm/bench/posts.json
+
+SMOKE_POLL_SEC        ?= 2
+SMOKE_HZ_ATTEMPTS     ?= 60    # 120s
+SMOKE_POSTS_ATTEMPTS  ?= 60
+SMOKE_LLM_ATTEMPTS    ?= 120   # 240s
+SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов под bench
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
@@ -16,6 +39,9 @@ SUPERADMIN_NAME  ?= Dev Superadmin
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
 .PHONY: mods-status mods-sync-dev
 .PHONY: superadmin
+.PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
+.PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
+.PHONY: dev-test
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -24,6 +50,8 @@ help:
 	@printf "\033[1;34m╰──────────────────────────────────────────────────────────────╯\033[0m\n\n"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "init"          "🔧  Клонирование подмодулей и первичная инициализация"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"           "🧪  Запуск DEV окружения (hot-reload, маунты)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke"     "🧪  DEV smoke (reset+wait-horizon+seed+posts+llm+report)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-reindex"   "🔁  DEV полный прогон (reset+posts+verify+events_extract+wait)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rebuild"       "🔁  Пересборка всех сервисов (no-cache)"
@@ -42,7 +70,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-retag"     "🔁  Перетегировать старый тэг в канон (SRC=..., ENV=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-move"      "🎯  Переместить существующий тэг на REF (TAG=..., REF=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулях"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулям"
 	@printf "\n"
 
 init:
@@ -206,6 +234,151 @@ nginx-test:
 	$(PROD) exec kudab-nginx nginx -t
 
 # -----------------------------
+# LLM / Parser: one-button dev smoke test
+# -----------------------------
+
+dev-smoke: dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
+	@echo "✅ dev-smoke DONE (version=$(PROMPT_VER))"
+
+dev-smoke-reset:
+	$(DEV) exec -T $(HZ_SVC) php artisan dev:reset --seed=0 --redis=1 --horizon=1
+
+dev-smoke-wait-horizon:
+	@cid=`$(DEV) ps -q $(HZ_SVC)`; \
+	  test -n "$$cid" || (echo "❌ ERROR: $(HZ_SVC) container not found"; exit 2); \
+	  echo "waiting horizon healthy (cid=$$cid) ..."; \
+	  for i in $$(seq 1 $(SMOKE_HZ_ATTEMPTS)); do \
+	    st=$$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' $$cid 2>/dev/null || true); \
+	    echo "horizon=$$st"; \
+	    echo "$$st" | grep -Eq 'running (healthy|nohealth)' && exit 0; \
+	    sleep $(SMOKE_POLL_SEC); \
+	  done; \
+	  echo "❌ ERROR: horizon not healthy in time"; \
+	  $(DEV) logs --tail=200 $(HZ_SVC); \
+	  exit 2
+
+dev-smoke-seed:
+	$(DEV) exec -T $(API_SVC) php artisan db:seed --force
+
+dev-smoke-posts:
+	@echo "enqueue communities via $(PARSER_CLI_SVC) ..."
+	$(DEV) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
+	@echo "waiting context_posts >= $(SMOKE_POSTS_MIN) ..."; \
+	  for i in $$(seq 1 $(SMOKE_POSTS_ATTEMPTS)); do \
+	    c=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from context_posts;"`; \
+	    echo "context_posts=$$c"; \
+	    test "$$c" -ge $(SMOKE_POSTS_MIN) && exit 0; \
+	    sleep $(SMOKE_POLL_SEC); \
+	  done; \
+	  echo "❌ ERROR: context_posts < $(SMOKE_POSTS_MIN)"; \
+	  $(DEV) logs --tail=200 $(HZ_SVC); \
+	  exit 2
+
+dev-smoke-llm:
+	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:make --limit=$(BENCH_LIMIT) --min_text=0 --file=$(BENCH_FILE)
+	@ids=`$(DEV) exec -T $(HZ_SVC) php -r 'echo count(json_decode(@file_get_contents("storage/app/$(BENCH_FILE)"), true) ?? []);'`; \
+	  echo "bench_ids=$$ids"; \
+	  test "$$ids" -gt 0 || (echo "❌ ERROR: bench file has 0 ids ($(BENCH_FILE))"; exit 2)
+	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:run $(PROMPT_VER) --file=$(BENCH_FILE) --reset=1
+	@echo "waiting llm_jobs finished (version=$(PROMPT_VER)) ..."; \
+	  for i in $$(seq 1 $(SMOKE_LLM_ATTEMPTS)); do \
+	    total=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)';"`; \
+	    pend=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' and status in ('pending','processing');"`; \
+	    echo "llm_jobs total=$$total pending_or_processing=$$pend"; \
+	    test "$$total" -gt 0 -a "$$pend" -eq 0 && exit 0; \
+	    sleep $(SMOKE_POLL_SEC); \
+	  done; \
+	  echo "❌ ERROR: llm_jobs not finished in time"; \
+	  $(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -c "select id, context_post_id, status, attempt, retry_at, updated_at from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' order by id desc limit 20;"; \
+	  exit 2
+
+dev-smoke-report:
+	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:report --file=$(BENCH_FILE) --versions=$(PROMPT_VER)
+
+# -----------------------------
+# Full pipeline: communities -> posts -> verify -> events_extract
+# -----------------------------
+
+VERIFY_LIMIT         ?= 20
+EVENTS_EXTRACT_LIMIT ?= 2000
+
+VERIFY_RETRY         ?= 3
+VERIFY_RETRY_SLEEP   ?= 2
+VERIFY_STRICT        ?= 1   # 1 = упасть в конце, если были ошибки; 0 = только warn
+
+# Тест через твой скрипт (scripts/dev/reindex.sh)
+dev-test:
+	@test -f scripts/dev/reindex.sh || (echo "ERROR: scripts/dev/reindex.sh not found"; exit 2)
+	@chmod +x scripts/dev/reindex.sh
+	PROMPT_VER=$(PROMPT_VER) VERIFY_LIMIT=$(VERIFY_LIMIT) EVENTS_EXTRACT_LIMIT=$(EVENTS_EXTRACT_LIMIT) POSTS_MIN=$(SMOKE_POSTS_MIN) \
+	  bash scripts/dev/reindex.sh
+
+dev-reindex: dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
+	@echo "✅ dev-reindex DONE (prompt=$(PROMPT_VER))"
+
+dev-reindex-verify:
+	@echo "verifying communities (limit=$(VERIFY_LIMIT), retry=$(VERIFY_RETRY)) ..."; \
+	  ids=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select id from communities order by id;"`; \
+	  failed=""; \
+	  c=0; \
+	  for cid in $$ids; do \
+	    c=$$((c+1)); \
+	    echo "[$$c] verify community_id=$$cid"; \
+	    ok=0; \
+	    for a in $$(seq 1 $(VERIFY_RETRY)); do \
+	      echo "  attempt $$a/$(VERIFY_RETRY) ..."; \
+	      if $(DEV) exec -T $(HZ_SVC) php artisan parser:verify:community:verify-locate $$cid --limit=$(VERIFY_LIMIT) --save --overwrite --clear-on-aggregator; then \
+	        ok=1; break; \
+	      fi; \
+	      sleep $(VERIFY_RETRY_SLEEP); \
+	    done; \
+	    if [ $$ok -ne 1 ]; then \
+	      echo "❌ verify failed for community_id=$$cid (after $(VERIFY_RETRY) attempts)"; \
+	      failed="$$failed $$cid"; \
+	    fi; \
+	  done; \
+	  echo "verify done: $$c communities"; \
+	  $(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -c "select verification_status, count(*) from communities group by verification_status order by verification_status;"; \
+	  if [ -n "$$failed" ]; then \
+	    echo "FAILED community_ids:$$failed"; \
+	    if [ "$(VERIFY_STRICT)" = "1" ]; then exit 2; fi; \
+	  fi
+
+dev-reindex-extract:
+	$(DEV) exec -T -e LLM_EVENTS_PROMPT_VERSION=$(PROMPT_VER) $(HZ_SVC) php artisan parser:events:extract --limit=$(EVENTS_EXTRACT_LIMIT)
+
+dev-reindex-wait:
+	@echo "waiting llm_jobs finished (task=events_extract, version=$(PROMPT_VER)) ..."; \
+	  for i in $$(seq 1 $(SMOKE_LLM_ATTEMPTS)); do \
+	    total=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)';"`; \
+	    pend=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' and status in ('pending','processing');"`; \
+	    echo "llm_jobs total=$$total pending_or_processing=$$pend"; \
+	    test "$$total" -gt 0 -a "$$pend" -eq 0 && exit 0; \
+	    sleep $(SMOKE_POLL_SEC); \
+	  done; \
+	  echo "❌ ERROR: llm_jobs not finished in time"; \
+	  $(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -c "select id, context_post_id, status, attempt, retry_at, updated_at from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' order by id desc limit 20;"; \
+	  exit 2
+
+dev-reindex-consume:
+	@echo "consuming completed llm_jobs -> events (version=$(PROMPT_VER)) ..."
+	$(DEV) exec -T -e LLM_EVENTS_PROMPT_VERSION=$(PROMPT_VER) $(HZ_SVC) php -r 'require "vendor/autoload.php"; $$app = require "bootstrap/app.php"; $$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $$v = getenv("LLM_EVENTS_PROMPT_VERSION") ?: "v1"; $$ids = Illuminate\Support\Facades\DB::table("llm_jobs as lj")->leftJoin("events as e", function($$j){ $$j->on("e.original_post_id","=","lj.context_post_id"); $$j->whereNull("e.deleted_at"); })->where("lj.task","events_extract")->where("lj.prompt_version",$$v)->where("lj.status","completed")->whereNull("e.id")->orderBy("lj.id")->pluck("lj.id")->all(); foreach($$ids as $$id){ Illuminate\Support\Facades\Bus::dispatchSync(new App\Jobs\ConsumeLlmEventsJob((int)$$id,false)); echo "OK consumed {$$id}\n"; } echo "DONE consume version={$$v} ids=".count($$ids)."\n";'
+
+dev-reindex-summary:
+	@echo "== SUMMARY (prompt=$(PROMPT_VER)) =="
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select prompt_version, status, count(*) cnt \
+from llm_jobs where task='events_extract' \
+group by 1,2 order by 1,2;"
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select status, count(*) cnt \
+from context_posts \
+group by 1 order by 1;"
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select count(*) as events_total \
+from events where deleted_at is null;"
+
+# -----------------------------
 # Infra: тэги (канон rel-<env>-YYYYMMDD-SS)
 # -----------------------------
 
@@ -245,7 +418,6 @@ tag-retag:
 	git tag -d $(SRC) || true; \
 	echo $$NEW
 
-# Переместить существующий тэг на указанный REF (по умолчанию HEAD)
 tag-move:
 	@test -n "$(TAG)" || (echo "TAG is required (make tag-move TAG=<name> [REF=<ref>])"; exit 1)
 	@REF=$${REF:-$$(git rev-parse HEAD)}; \
@@ -253,7 +425,6 @@ tag-move:
 	git push origin :refs/tags/$(TAG); \
 	git push origin $(TAG)
 
-# Починить origin/HEAD у сабмодулей (если где-то не задан и ломает команды)
 submodules-fix-head:
 	@git submodule foreach --recursive 'git remote set-head origin -a || true'
 

@@ -1,6 +1,7 @@
 services:
   # ---------------------- Schedulers (optional) ----------------------
   kudab-parser-scheduler:
+    env_file: .env
     image: kudab-parser:latest
     user: "${UID}:${GID}"
     build: ./services/kudab-parser
@@ -108,12 +109,19 @@ services:
       - redis
 
   kudab-horizon:
+    env_file: .env
     image: kudab-parser:latest
     container_name: ${KUDAB_HORIZON_CONTAINER:-kudab-horizon}
     user: "${UID}:${GID}"
     volumes:
       - ./services/kudab-parser:/var/www/html:rw
     environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: kudab-db
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-kudab}
+      DB_USERNAME: ${POSTGRES_USER:-kudab}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-kudab}
       HOME: /tmp
       XDG_CONFIG_HOME: /tmp
       PSYSH_CONFIG_DIR: /tmp/psysh
@@ -250,6 +258,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    command: ["postgres", "-c", "timezone=UTC", "-c", "log_timezone=UTC"]
 
 volumes:
   pgdata:
