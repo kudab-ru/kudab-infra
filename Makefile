@@ -40,6 +40,7 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: mods-status mods-sync-dev
 .PHONY: superadmin
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
+.PHONY: dev-smoke-post dev-post
 .PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
 .PHONY: dev-test
 
@@ -51,6 +52,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "init"          "🔧  Клонирование подмодулей и первичная инициализация"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"           "🧪  Запуск DEV окружения (hot-reload, маунты)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke"     "🧪  DEV smoke (reset+wait-horizon+seed+posts+llm+report)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke-post" "🧪  DEV smoke по одному существующему посту (POST_ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-reindex"   "🔁  DEV полный прогон (reset+posts+verify+events_extract+wait)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
@@ -294,6 +296,27 @@ dev-smoke-llm:
 
 dev-smoke-report:
 	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:report --file=$(BENCH_FILE) --versions=$(PROMPT_VER)
+
+# -----------------------------
+# Smoke: one existing post (POST_ID)
+# -----------------------------
+
+# 1 = снести derived-данные по посту (events/event_sources/event_interest)
+CLEAN     ?= 1
+# 1 = удалить llm_jobs по посту+версии перед прогоном (детерминированность)
+RESET_LLM ?= 1
+# 1 = ConsumeLlmEventsJob(..., true). Должно быть разрешено allow_no_geo.
+NO_GEO    ?= 0
+
+dev-smoke-post:
+	@test -n "$(POST_ID)" || (echo "POST_ID is required: make dev-smoke-post POST_ID=<id>"; exit 1)
+	@test -f scripts/dev/smoke_post.sh || (echo "ERROR: scripts/dev/smoke_post.sh not found"; exit 2)
+	@chmod +x scripts/dev/smoke_post.sh
+	POST_ID=$(POST_ID) PROMPT_VER=$(PROMPT_VER) CLEAN=$(CLEAN) RESET_LLM=$(RESET_LLM) NO_GEO=$(NO_GEO) \
+	  bash scripts/dev/smoke_post.sh
+
+# алиас покороче
+dev-post: dev-smoke-post
 
 # -----------------------------
 # Full pipeline: communities -> posts -> verify -> events_extract
