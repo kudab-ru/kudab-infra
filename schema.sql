@@ -17,6 +17,41 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS '';
+
+
+--
+-- Name: telegram; Type: SCHEMA; Schema: -; Owner: -
+--
+
+CREATE SCHEMA telegram;
+
+
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
+--
 -- Name: postgis; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -24,7 +59,7 @@ CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION postgis; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION postgis; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON EXTENSION postgis IS 'PostGIS geometry and geography spatial types and functions';
@@ -35,7 +70,16 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
--- Name: attachments; Type: TABLE; Schema: public; Owner: kudab
+-- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alembic_version (
+    version_num character varying(32) NOT NULL
+);
+
+
+--
+-- Name: attachments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.attachments (
@@ -43,7 +87,7 @@ CREATE TABLE public.attachments (
     parent_type character varying(255) NOT NULL,
     parent_id bigint NOT NULL,
     type character varying(255) NOT NULL,
-    url character varying(255) NOT NULL,
+    url text NOT NULL,
     preview_url character varying(255),
     "order" integer DEFAULT 0 NOT NULL,
     created_at timestamp(0) without time zone,
@@ -51,52 +95,50 @@ CREATE TABLE public.attachments (
 );
 
 
-ALTER TABLE public.attachments OWNER TO kudab;
-
 --
--- Name: COLUMN attachments.parent_type; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments.parent_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments.parent_type IS 'Тип родительского объекта: context_post, event и др.';
 
 
 --
--- Name: COLUMN attachments.parent_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments.parent_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments.parent_id IS 'ID родительского объекта';
 
 
 --
--- Name: COLUMN attachments.type; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments.type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments.type IS 'Тип вложения: image, video, file и др.';
 
 
 --
--- Name: COLUMN attachments.url; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments.url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments.url IS 'Ссылка на файл';
 
 
 --
--- Name: COLUMN attachments.preview_url; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments.preview_url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments.preview_url IS 'Ссылка на превью (если есть)';
 
 
 --
--- Name: COLUMN attachments."order"; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN attachments."order"; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.attachments."order" IS 'Порядок вложения';
 
 
 --
--- Name: attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.attachments_id_seq
@@ -107,17 +149,15 @@ CREATE SEQUENCE public.attachments_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.attachments_id_seq OWNER TO kudab;
-
 --
--- Name: attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.attachments_id_seq OWNED BY public.attachments.id;
 
 
 --
--- Name: cache; Type: TABLE; Schema: public; Owner: kudab
+-- Name: cache; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.cache (
@@ -127,10 +167,8 @@ CREATE TABLE public.cache (
 );
 
 
-ALTER TABLE public.cache OWNER TO kudab;
-
 --
--- Name: cache_locks; Type: TABLE; Schema: public; Owner: kudab
+-- Name: cache_locks; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.cache_locks (
@@ -140,63 +178,138 @@ CREATE TABLE public.cache_locks (
 );
 
 
-ALTER TABLE public.cache_locks OWNER TO kudab;
+--
+-- Name: cities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cities (
+    id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    country_code character varying(2),
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone,
+    location public.geometry(Point,4326) NOT NULL,
+    latitude numeric(9,6) GENERATED ALWAYS AS (public.st_y((location)::public.geometry)) STORED,
+    longitude numeric(9,6) GENERATED ALWAYS AS (public.st_x((location)::public.geometry)) STORED,
+    status character varying(16) DEFAULT 'active'::character varying NOT NULL,
+    name_ci text GENERATED ALWAYS AS (lower((name)::text)) STORED
+);
+
 
 --
--- Name: communities; Type: TABLE; Schema: public; Owner: kudab
+-- Name: cities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.cities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: cities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.cities_id_seq OWNED BY public.cities.id;
+
+
+--
+-- Name: communities; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.communities (
     id bigint NOT NULL,
     name character varying(255) NOT NULL,
     description text,
-    source character varying(255),
+    city character varying(255),
+    street character varying(255),
+    house character varying(255),
     avatar_url character varying(255),
-    external_id character varying(255),
+    image_url character varying(255),
+    last_checked_at timestamp(0) without time zone,
+    verification_status character varying(255) DEFAULT 'pending'::character varying,
+    is_verified boolean DEFAULT false NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    verification_meta jsonb,
+    city_id bigint
 );
 
 
-ALTER TABLE public.communities OWNER TO kudab;
-
 --
--- Name: COLUMN communities.name; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN communities.name; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.communities.name IS 'Название сообщества';
 
 
 --
--- Name: COLUMN communities.description; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN communities.description; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.communities.description IS 'Описание сообщества';
 
 
 --
--- Name: COLUMN communities.source; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN communities.city; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.communities.source IS 'Источник: vk, tg, site и др.';
+COMMENT ON COLUMN public.communities.city IS 'Город (опционально)';
 
 
 --
--- Name: COLUMN communities.avatar_url; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN communities.street; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.communities.street IS 'Улица';
+
+
+--
+-- Name: COLUMN communities.house; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.communities.house IS 'Дом';
+
+
+--
+-- Name: COLUMN communities.avatar_url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.communities.avatar_url IS 'Ссылка на аватар';
 
 
 --
--- Name: COLUMN communities.external_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN communities.image_url; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.communities.external_id IS 'ID/slug в исходной соцсети';
+COMMENT ON COLUMN public.communities.image_url IS 'Доп. изображение или постер';
 
 
 --
--- Name: communities_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: COLUMN communities.last_checked_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.communities.last_checked_at IS 'Время последней проверки (парсинг/валидность)';
+
+
+--
+-- Name: COLUMN communities.verification_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.communities.verification_status IS 'Статус проверки/верификации (pending/approved/rejected)';
+
+
+--
+-- Name: COLUMN communities.is_verified; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.communities.is_verified IS 'Признак верификации';
+
+
+--
+-- Name: communities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.communities_id_seq
@@ -207,17 +320,15 @@ CREATE SEQUENCE public.communities_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.communities_id_seq OWNER TO kudab;
-
 --
--- Name: communities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: communities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.communities_id_seq OWNED BY public.communities.id;
 
 
 --
--- Name: community_interest; Type: TABLE; Schema: public; Owner: kudab
+-- Name: community_interest; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.community_interest (
@@ -228,69 +339,74 @@ CREATE TABLE public.community_interest (
 );
 
 
-ALTER TABLE public.community_interest OWNER TO kudab;
-
 --
--- Name: COLUMN community_interest.community_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN community_interest.community_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.community_interest.community_id IS 'FK на communities.id';
 
 
 --
--- Name: COLUMN community_interest.interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN community_interest.interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.community_interest.interest_id IS 'FK на interests.id';
 
 
 --
--- Name: community_social_links; Type: TABLE; Schema: public; Owner: kudab
+-- Name: community_social_links; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.community_social_links (
     id bigint NOT NULL,
     community_id bigint NOT NULL,
     social_network_id bigint NOT NULL,
-    external_community_id character varying(255),
-    url character varying(255) NOT NULL,
+    external_community_id character varying(128),
+    url character varying(512) NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    last_verification_id bigint,
+    last_checked_at timestamp(0) without time zone,
+    last_is_active boolean,
+    last_has_events boolean,
+    last_kind character varying(16),
+    last_hq_city character varying(255),
+    last_hq_street character varying(255),
+    last_hq_house character varying(255),
+    last_hq_confidence numeric(3,2)
 );
 
 
-ALTER TABLE public.community_social_links OWNER TO kudab;
-
 --
--- Name: COLUMN community_social_links.community_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN community_social_links.community_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.community_social_links.community_id IS 'FK на communities.id';
 
 
 --
--- Name: COLUMN community_social_links.social_network_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN community_social_links.social_network_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.community_social_links.social_network_id IS 'FK на social_networks.id';
 
 
 --
--- Name: COLUMN community_social_links.external_community_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN community_social_links.external_community_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.community_social_links.external_community_id IS 'ID/slug/username сообщества в соцсети';
-
-
---
--- Name: COLUMN community_social_links.url; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.community_social_links.url IS 'Ссылка на профиль сообщества';
+COMMENT ON COLUMN public.community_social_links.external_community_id IS 'ID/slug/username сообщества в соцсети или null для сайтов';
 
 
 --
--- Name: community_social_links_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: COLUMN community_social_links.url; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.community_social_links.url IS 'Ссылка на профиль сообщества в соцсети или на сайте';
+
+
+--
+-- Name: community_social_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.community_social_links_id_seq
@@ -301,17 +417,15 @@ CREATE SEQUENCE public.community_social_links_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.community_social_links_id_seq OWNER TO kudab;
-
 --
--- Name: community_social_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: community_social_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.community_social_links_id_seq OWNED BY public.community_social_links.id;
 
 
 --
--- Name: context_interactions; Type: TABLE; Schema: public; Owner: kudab
+-- Name: context_interactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.context_interactions (
@@ -327,52 +441,50 @@ CREATE TABLE public.context_interactions (
 );
 
 
-ALTER TABLE public.context_interactions OWNER TO kudab;
-
 --
--- Name: COLUMN context_interactions.post_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.post_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.post_id IS 'FK на context_posts.id';
 
 
 --
--- Name: COLUMN context_interactions.user_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.user_id IS 'FK на users.id';
 
 
 --
--- Name: COLUMN context_interactions.type; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.type IS 'Тип действия: request, response, flag, comment и др.';
 
 
 --
--- Name: COLUMN context_interactions.status; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.status IS 'Статус действия: active, reviewed, flagged и др.';
 
 
 --
--- Name: COLUMN context_interactions.message; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.message; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.message IS 'Сообщение, комментарий, ответ';
 
 
 --
--- Name: COLUMN context_interactions.reason; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_interactions.reason; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_interactions.reason IS 'Причина/категория, если применимо';
 
 
 --
--- Name: context_interactions_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: context_interactions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.context_interactions_id_seq
@@ -383,17 +495,15 @@ CREATE SEQUENCE public.context_interactions_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.context_interactions_id_seq OWNER TO kudab;
-
 --
--- Name: context_interactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: context_interactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.context_interactions_id_seq OWNED BY public.context_interactions.id;
 
 
 --
--- Name: context_posts; Type: TABLE; Schema: public; Owner: kudab
+-- Name: context_posts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.context_posts (
@@ -408,56 +518,63 @@ CREATE TABLE public.context_posts (
     published_at timestamp(0) without time zone,
     status character varying(255) DEFAULT 'active'::character varying NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    social_link_id bigint,
+    deleted_at timestamp(0) without time zone
 );
 
 
-ALTER TABLE public.context_posts OWNER TO kudab;
-
 --
--- Name: COLUMN context_posts.external_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.external_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.external_id IS 'ID исходного поста VK/TG/сайт';
 
 
 --
--- Name: COLUMN context_posts.source; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.source; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.source IS 'vk, tg, site и др.';
 
 
 --
--- Name: COLUMN context_posts.author_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.author_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.author_id IS 'ID автора (user/community/external)';
 
 
 --
--- Name: COLUMN context_posts.author_type; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.author_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.author_type IS 'user, community, external';
 
 
 --
--- Name: COLUMN context_posts.community_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.community_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.community_id IS 'FK на communities.id';
 
 
 --
--- Name: COLUMN context_posts.status; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.context_posts.status IS 'active, flagged, hidden и др.';
 
 
 --
--- Name: context_posts_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: COLUMN context_posts.social_link_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.context_posts.social_link_id IS 'FK на community_social_links.id';
+
+
+--
+-- Name: context_posts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.context_posts_id_seq
@@ -468,17 +585,124 @@ CREATE SEQUENCE public.context_posts_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.context_posts_id_seq OWNER TO kudab;
-
 --
--- Name: context_posts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: context_posts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.context_posts_id_seq OWNED BY public.context_posts.id;
 
 
 --
--- Name: event_attendees; Type: TABLE; Schema: public; Owner: kudab
+-- Name: error_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.error_logs (
+    id bigint NOT NULL,
+    type character varying(64) NOT NULL,
+    community_id bigint,
+    community_social_link_id bigint,
+    job character varying(128),
+    error_text text NOT NULL,
+    error_code character varying(32),
+    logged_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    resolved boolean DEFAULT false NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone,
+    meta jsonb
+);
+
+
+--
+-- Name: COLUMN error_logs.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.id IS 'Primary key';
+
+
+--
+-- Name: COLUMN error_logs.type; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.type IS 'Тип ошибки: vk_api, job_error, frozen, ml_error и др.';
+
+
+--
+-- Name: COLUMN error_logs.community_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.community_id IS 'ID сообщества, если применимо';
+
+
+--
+-- Name: COLUMN error_logs.community_social_link_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.community_social_link_id IS 'ID ссылки источника, если применимо';
+
+
+--
+-- Name: COLUMN error_logs.job; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.job IS 'Класс/имя задания (job), в котором возникла ошибка';
+
+
+--
+-- Name: COLUMN error_logs.error_text; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.error_text IS 'Текст ошибки';
+
+
+--
+-- Name: COLUMN error_logs.error_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.error_code IS 'Код ошибки, если есть';
+
+
+--
+-- Name: COLUMN error_logs.logged_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.logged_at IS 'Время записи';
+
+
+--
+-- Name: COLUMN error_logs.resolved; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.resolved IS 'Ошибка решена/неактуальна';
+
+
+--
+-- Name: COLUMN error_logs.meta; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.error_logs.meta IS 'Дополнительные данные/контекст';
+
+
+--
+-- Name: error_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.error_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: error_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.error_logs_id_seq OWNED BY public.error_logs.id;
+
+
+--
+-- Name: event_attendees; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.event_attendees (
@@ -491,38 +715,36 @@ CREATE TABLE public.event_attendees (
 );
 
 
-ALTER TABLE public.event_attendees OWNER TO kudab;
-
 --
--- Name: COLUMN event_attendees.event_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_attendees.event_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_attendees.event_id IS 'FK на events.id';
 
 
 --
--- Name: COLUMN event_attendees.user_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_attendees.user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_attendees.user_id IS 'FK на users.id';
 
 
 --
--- Name: COLUMN event_attendees.status; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_attendees.status; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_attendees.status IS 'Статус участия: going, interested, rejected и др.';
 
 
 --
--- Name: COLUMN event_attendees.joined_at; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_attendees.joined_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_attendees.joined_at IS 'Время присоединения';
 
 
 --
--- Name: event_interest; Type: TABLE; Schema: public; Owner: kudab
+-- Name: event_interest; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.event_interest (
@@ -533,24 +755,62 @@ CREATE TABLE public.event_interest (
 );
 
 
-ALTER TABLE public.event_interest OWNER TO kudab;
-
 --
--- Name: COLUMN event_interest.event_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_interest.event_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_interest.event_id IS 'FK на events.id';
 
 
 --
--- Name: COLUMN event_interest.interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN event_interest.interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.event_interest.interest_id IS 'FK на interests.id';
 
 
 --
--- Name: events; Type: TABLE; Schema: public; Owner: kudab
+-- Name: event_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.event_sources (
+    id bigint NOT NULL,
+    event_id bigint NOT NULL,
+    social_link_id bigint NOT NULL,
+    context_post_id bigint,
+    source text NOT NULL,
+    post_external_id text NOT NULL,
+    external_url text,
+    published_at timestamp(0) with time zone,
+    images json DEFAULT '[]'::json NOT NULL,
+    meta json,
+    generated_link text,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: event_sources_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.event_sources_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: event_sources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.event_sources_id_seq OWNED BY public.event_sources.id;
+
+
+--
+-- Name: events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.events (
@@ -558,8 +818,8 @@ CREATE TABLE public.events (
     original_post_id bigint,
     community_id bigint NOT NULL,
     title character varying(255) NOT NULL,
-    start_time timestamp(0) without time zone NOT NULL,
-    end_time timestamp(0) without time zone,
+    start_time timestamp with time zone NOT NULL,
+    end_time timestamp with time zone,
     city character varying(255),
     address character varying(255),
     description text,
@@ -568,16 +828,27 @@ CREATE TABLE public.events (
     created_at timestamp(0) without time zone,
     updated_at timestamp(0) without time zone,
     deleted_at timestamp(0) without time zone,
-    location public.geometry(Point,4326) NOT NULL,
+    location public.geometry(Point,4326),
     latitude numeric(9,6) GENERATED ALWAYS AS (public.st_y((location)::public.geometry)) STORED,
-    longitude numeric(9,6) GENERATED ALWAYS AS (public.st_x((location)::public.geometry)) STORED
+    longitude numeric(9,6) GENERATED ALWAYS AS (public.st_x((location)::public.geometry)) STORED,
+    lat_round numeric(9,3) GENERATED ALWAYS AS (
+CASE
+    WHEN (location IS NULL) THEN NULL::numeric
+    ELSE round((public.st_y(location))::numeric, 3)
+END) STORED,
+    lon_round numeric(9,3) GENERATED ALWAYS AS (
+CASE
+    WHEN (location IS NULL) THEN NULL::numeric
+    ELSE round((public.st_x(location))::numeric, 3)
+END) STORED,
+    dedup_key character varying(66),
+    house_fias_id character varying(36),
+    city_id bigint
 );
 
 
-ALTER TABLE public.events OWNER TO kudab;
-
 --
--- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.events_id_seq
@@ -588,17 +859,15 @@ CREATE SEQUENCE public.events_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.events_id_seq OWNER TO kudab;
-
 --
--- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.events_id_seq OWNED BY public.events.id;
 
 
 --
--- Name: failed_jobs; Type: TABLE; Schema: public; Owner: kudab
+-- Name: failed_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.failed_jobs (
@@ -612,10 +881,8 @@ CREATE TABLE public.failed_jobs (
 );
 
 
-ALTER TABLE public.failed_jobs OWNER TO kudab;
-
 --
--- Name: failed_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: failed_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.failed_jobs_id_seq
@@ -626,17 +893,62 @@ CREATE SEQUENCE public.failed_jobs_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.failed_jobs_id_seq OWNER TO kudab;
-
 --
--- Name: failed_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: failed_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.failed_jobs_id_seq OWNED BY public.failed_jobs.id;
 
 
 --
--- Name: interest_links; Type: TABLE; Schema: public; Owner: kudab
+-- Name: interest_aliases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.interest_aliases (
+    id bigint NOT NULL,
+    interest_id bigint NOT NULL,
+    alias character varying(64) NOT NULL,
+    locale character varying(8),
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: COLUMN interest_aliases.alias; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.interest_aliases.alias IS 'Синоним / альтернативный ярлык';
+
+
+--
+-- Name: COLUMN interest_aliases.locale; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.interest_aliases.locale IS 'ru/en/... (опционально)';
+
+
+--
+-- Name: interest_aliases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.interest_aliases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: interest_aliases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.interest_aliases_id_seq OWNED BY public.interest_aliases.id;
+
+
+--
+-- Name: interest_links; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.interest_links (
@@ -648,31 +960,29 @@ CREATE TABLE public.interest_links (
 );
 
 
-ALTER TABLE public.interest_links OWNER TO kudab;
-
 --
--- Name: COLUMN interest_links.parent_type; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_links.parent_type; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_links.parent_type IS 'Тип объекта: context_post, event и др.';
 
 
 --
--- Name: COLUMN interest_links.parent_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_links.parent_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_links.parent_id IS 'ID объекта';
 
 
 --
--- Name: COLUMN interest_links.interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_links.interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_links.interest_id IS 'FK на interests.id';
 
 
 --
--- Name: interest_relations; Type: TABLE; Schema: public; Owner: kudab
+-- Name: interest_relations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.interest_relations (
@@ -684,24 +994,22 @@ CREATE TABLE public.interest_relations (
 );
 
 
-ALTER TABLE public.interest_relations OWNER TO kudab;
-
 --
--- Name: COLUMN interest_relations.parent_interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_relations.parent_interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_relations.parent_interest_id IS 'FK на interests.id (родитель)';
 
 
 --
--- Name: COLUMN interest_relations.child_interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_relations.child_interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_relations.child_interest_id IS 'FK на interests.id (дочерний)';
 
 
 --
--- Name: interest_relations_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: interest_relations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.interest_relations_id_seq
@@ -712,17 +1020,15 @@ CREATE SEQUENCE public.interest_relations_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.interest_relations_id_seq OWNER TO kudab;
-
 --
--- Name: interest_relations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: interest_relations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.interest_relations_id_seq OWNED BY public.interest_relations.id;
 
 
 --
--- Name: interest_user; Type: TABLE; Schema: public; Owner: kudab
+-- Name: interest_user; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.interest_user (
@@ -733,61 +1039,50 @@ CREATE TABLE public.interest_user (
 );
 
 
-ALTER TABLE public.interest_user OWNER TO kudab;
-
 --
--- Name: COLUMN interest_user.user_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_user.user_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_user.user_id IS 'FK на users.id';
 
 
 --
--- Name: COLUMN interest_user.interest_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interest_user.interest_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interest_user.interest_id IS 'FK на interests.id';
 
 
 --
--- Name: interests; Type: TABLE; Schema: public; Owner: kudab
+-- Name: interests; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.interests (
     id bigint NOT NULL,
     name character varying(255) NOT NULL,
     parent_id bigint,
-    is_paid boolean DEFAULT false NOT NULL,
     created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
+    updated_at timestamp(0) without time zone,
+    slug character varying(64) NOT NULL
 );
 
 
-ALTER TABLE public.interests OWNER TO kudab;
-
 --
--- Name: COLUMN interests.name; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interests.name; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interests.name IS 'Название интереса';
 
 
 --
--- Name: COLUMN interests.parent_id; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN interests.parent_id; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.interests.parent_id IS 'FK на interests.id, для дерева интересов';
 
 
 --
--- Name: COLUMN interests.is_paid; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.interests.is_paid IS 'Платный интерес?';
-
-
---
--- Name: interests_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: interests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.interests_id_seq
@@ -798,17 +1093,15 @@ CREATE SEQUENCE public.interests_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.interests_id_seq OWNER TO kudab;
-
 --
--- Name: interests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: interests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.interests_id_seq OWNED BY public.interests.id;
 
 
 --
--- Name: job_batches; Type: TABLE; Schema: public; Owner: kudab
+-- Name: job_batches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.job_batches (
@@ -825,10 +1118,8 @@ CREATE TABLE public.job_batches (
 );
 
 
-ALTER TABLE public.job_batches OWNER TO kudab;
-
 --
--- Name: jobs; Type: TABLE; Schema: public; Owner: kudab
+-- Name: jobs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.jobs (
@@ -842,10 +1133,8 @@ CREATE TABLE public.jobs (
 );
 
 
-ALTER TABLE public.jobs OWNER TO kudab;
-
 --
--- Name: jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.jobs_id_seq
@@ -856,17 +1145,59 @@ CREATE SEQUENCE public.jobs_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.jobs_id_seq OWNER TO kudab;
-
 --
--- Name: jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.jobs_id_seq OWNED BY public.jobs.id;
 
 
 --
--- Name: migrations; Type: TABLE; Schema: public; Owner: kudab
+-- Name: llm_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.llm_jobs (
+    id bigint NOT NULL,
+    type character varying(32) DEFAULT 'chat'::character varying NOT NULL,
+    status character varying(24) DEFAULT 'pending'::character varying NOT NULL,
+    context_post_id bigint,
+    input jsonb,
+    options jsonb,
+    result jsonb,
+    error_code integer,
+    error_message character varying(1024),
+    started_at timestamp(0) without time zone,
+    finished_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone,
+    attempt smallint DEFAULT '0'::smallint NOT NULL,
+    retry_at timestamp(0) with time zone,
+    task character varying(64),
+    prompt_version character varying(32)
+);
+
+
+--
+-- Name: llm_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.llm_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: llm_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.llm_jobs_id_seq OWNED BY public.llm_jobs.id;
+
+
+--
+-- Name: migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.migrations (
@@ -876,10 +1207,8 @@ CREATE TABLE public.migrations (
 );
 
 
-ALTER TABLE public.migrations OWNER TO kudab;
-
 --
--- Name: migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: migrations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.migrations_id_seq
@@ -891,17 +1220,146 @@ CREATE SEQUENCE public.migrations_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.migrations_id_seq OWNER TO kudab;
-
 --
--- Name: migrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: migrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.migrations_id_seq OWNED BY public.migrations.id;
 
 
 --
--- Name: password_reset_tokens; Type: TABLE; Schema: public; Owner: kudab
+-- Name: model_has_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_has_permissions (
+    permission_id bigint NOT NULL,
+    model_type character varying(255) NOT NULL,
+    model_id bigint NOT NULL
+);
+
+
+--
+-- Name: model_has_roles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_has_roles (
+    role_id bigint NOT NULL,
+    model_type character varying(255) NOT NULL,
+    model_id bigint NOT NULL
+);
+
+
+--
+-- Name: parsing_statuses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parsing_statuses (
+    id bigint NOT NULL,
+    community_social_link_id bigint NOT NULL,
+    is_frozen boolean DEFAULT false NOT NULL,
+    frozen_reason character varying(64),
+    unfreeze_at timestamp(0) without time zone,
+    last_error text,
+    last_error_code character varying(16),
+    last_success_at timestamp(0) without time zone,
+    total_failures integer DEFAULT 0 NOT NULL,
+    retry_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: COLUMN parsing_statuses.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.id IS 'Primary key: статус парсинга для каждой community_social_link';
+
+
+--
+-- Name: COLUMN parsing_statuses.community_social_link_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.community_social_link_id IS 'FK на community_social_links.id — источник парсинга';
+
+
+--
+-- Name: COLUMN parsing_statuses.is_frozen; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.is_frozen IS 'Флаг: источник заморожен для парсинга (лимиты, ошибки, капча)';
+
+
+--
+-- Name: COLUMN parsing_statuses.frozen_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.frozen_reason IS 'Причина заморозки: rate_limit, ban, captcha, error, manual';
+
+
+--
+-- Name: COLUMN parsing_statuses.unfreeze_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.unfreeze_at IS 'Время автоматического размораживания';
+
+
+--
+-- Name: COLUMN parsing_statuses.last_error; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.last_error IS 'Текст последней ошибки';
+
+
+--
+-- Name: COLUMN parsing_statuses.last_error_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.last_error_code IS 'Код ошибки (429, 403, 500, timeout и др.)';
+
+
+--
+-- Name: COLUMN parsing_statuses.last_success_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.last_success_at IS 'Время последнего успешного парсинга';
+
+
+--
+-- Name: COLUMN parsing_statuses.total_failures; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.total_failures IS 'Число неудачных попыток подряд';
+
+
+--
+-- Name: COLUMN parsing_statuses.retry_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parsing_statuses.retry_count IS 'Количество подряд ретраев после последнего успеха';
+
+
+--
+-- Name: parsing_statuses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.parsing_statuses_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: parsing_statuses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.parsing_statuses_id_seq OWNED BY public.parsing_statuses.id;
+
+
+--
+-- Name: password_reset_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.password_reset_tokens (
@@ -911,10 +1369,40 @@ CREATE TABLE public.password_reset_tokens (
 );
 
 
-ALTER TABLE public.password_reset_tokens OWNER TO kudab;
+--
+-- Name: permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.permissions (
+    id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    guard_name character varying(255) NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
 
 --
--- Name: personal_access_tokens; Type: TABLE; Schema: public; Owner: kudab
+-- Name: permissions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.permissions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.permissions_id_seq OWNED BY public.permissions.id;
+
+
+--
+-- Name: personal_access_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.personal_access_tokens (
@@ -931,10 +1419,8 @@ CREATE TABLE public.personal_access_tokens (
 );
 
 
-ALTER TABLE public.personal_access_tokens OWNER TO kudab;
-
 --
--- Name: personal_access_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: personal_access_tokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.personal_access_tokens_id_seq
@@ -945,17 +1431,88 @@ CREATE SEQUENCE public.personal_access_tokens_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.personal_access_tokens_id_seq OWNER TO kudab;
-
 --
--- Name: personal_access_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: personal_access_tokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.personal_access_tokens_id_seq OWNED BY public.personal_access_tokens.id;
 
 
 --
--- Name: sessions; Type: TABLE; Schema: public; Owner: kudab
+-- Name: role_has_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.role_has_permissions (
+    permission_id bigint NOT NULL,
+    role_id bigint NOT NULL
+);
+
+
+--
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.roles (
+    id bigint NOT NULL,
+    name character varying(255) NOT NULL,
+    guard_name character varying(255) NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.roles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.roles_id_seq OWNED BY public.roles.id;
+
+
+--
+-- Name: seeders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.seeders (
+    id bigint NOT NULL,
+    seeder_name character varying(255) NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: seeders_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.seeders_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: seeders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.seeders_id_seq OWNED BY public.seeders.id;
+
+
+--
+-- Name: sessions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sessions (
@@ -968,16 +1525,67 @@ CREATE TABLE public.sessions (
 );
 
 
-ALTER TABLE public.sessions OWNER TO kudab;
+--
+-- Name: social_link_verifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.social_link_verifications (
+    id bigint NOT NULL,
+    community_id bigint NOT NULL,
+    community_social_link_id bigint NOT NULL,
+    social_network_id bigint NOT NULL,
+    checked_at timestamp(0) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    status character varying(16) DEFAULT 'ok'::character varying NOT NULL,
+    latency_ms integer,
+    model character varying(64),
+    prompt_version integer DEFAULT 1 NOT NULL,
+    error_code character varying(64),
+    error_message text,
+    is_active boolean,
+    has_events_posts boolean,
+    activity_score numeric(3,2),
+    events_score numeric(3,2),
+    kind character varying(16),
+    has_fixed_place boolean,
+    hq_city character varying(255),
+    hq_street character varying(255),
+    hq_house character varying(255),
+    hq_confidence numeric(3,2),
+    examples jsonb,
+    events_locations jsonb,
+    raw jsonb,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
 
 --
--- Name: social_networks; Type: TABLE; Schema: public; Owner: kudab
+-- Name: social_link_verifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.social_link_verifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: social_link_verifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.social_link_verifications_id_seq OWNED BY public.social_link_verifications.id;
+
+
+--
+-- Name: social_networks; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.social_networks (
     id bigint NOT NULL,
-    name character varying(255) NOT NULL,
-    slug character varying(255) NOT NULL,
+    name character varying(64) NOT NULL,
+    slug character varying(32) NOT NULL,
     icon character varying(255),
     url_mask character varying(255),
     created_at timestamp(0) without time zone,
@@ -985,38 +1593,36 @@ CREATE TABLE public.social_networks (
 );
 
 
-ALTER TABLE public.social_networks OWNER TO kudab;
-
 --
--- Name: COLUMN social_networks.name; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN social_networks.name; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.social_networks.name IS 'Название соцсети (VK, Telegram, Instagram, ...)';
 
 
 --
--- Name: COLUMN social_networks.slug; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN social_networks.slug; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.social_networks.slug IS 'Слаг: vk, telegram, instagram и др.';
 
 
 --
--- Name: COLUMN social_networks.icon; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN social_networks.icon; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.social_networks.icon IS 'Иконка/emoji или URL';
 
 
 --
--- Name: COLUMN social_networks.url_mask; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN social_networks.url_mask; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.social_networks.url_mask IS 'Шаблон для генерации ссылок';
 
 
 --
--- Name: social_networks_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: social_networks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.social_networks_id_seq
@@ -1027,131 +1633,15 @@ CREATE SEQUENCE public.social_networks_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.social_networks_id_seq OWNER TO kudab;
-
 --
--- Name: social_networks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: social_networks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.social_networks_id_seq OWNED BY public.social_networks.id;
 
 
 --
--- Name: telegram_users; Type: TABLE; Schema: public; Owner: kudab
---
-
-CREATE TABLE public.telegram_users (
-    id bigint NOT NULL,
-    user_id bigint,
-    telegram_id bigint NOT NULL,
-    telegram_username character varying(255),
-    first_name character varying(255),
-    last_name character varying(255),
-    language_code character varying(8),
-    chat_id bigint,
-    is_bot boolean DEFAULT false NOT NULL,
-    registered_at timestamp(0) without time zone,
-    last_active timestamp(0) without time zone,
-    created_at timestamp(0) without time zone,
-    updated_at timestamp(0) without time zone
-);
-
-
-ALTER TABLE public.telegram_users OWNER TO kudab;
-
---
--- Name: COLUMN telegram_users.user_id; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.user_id IS 'FK на users.id, опционально';
-
-
---
--- Name: COLUMN telegram_users.telegram_id; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.telegram_id IS 'Telegram user ID (уникальный)';
-
-
---
--- Name: COLUMN telegram_users.telegram_username; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.telegram_username IS 'username в Telegram';
-
-
---
--- Name: COLUMN telegram_users.first_name; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.first_name IS 'Имя пользователя в Telegram';
-
-
---
--- Name: COLUMN telegram_users.last_name; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.last_name IS 'Фамилия пользователя в Telegram';
-
-
---
--- Name: COLUMN telegram_users.language_code; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.language_code IS 'Язык пользователя';
-
-
---
--- Name: COLUMN telegram_users.chat_id; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.chat_id IS 'Активный chat_id Telegram';
-
-
---
--- Name: COLUMN telegram_users.is_bot; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.is_bot IS 'Это бот-пользователь';
-
-
---
--- Name: COLUMN telegram_users.registered_at; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.registered_at IS 'Первое посещение';
-
-
---
--- Name: COLUMN telegram_users.last_active; Type: COMMENT; Schema: public; Owner: kudab
---
-
-COMMENT ON COLUMN public.telegram_users.last_active IS 'Последняя активность';
-
-
---
--- Name: telegram_users_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
---
-
-CREATE SEQUENCE public.telegram_users_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER TABLE public.telegram_users_id_seq OWNER TO kudab;
-
---
--- Name: telegram_users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
---
-
-ALTER SEQUENCE public.telegram_users_id_seq OWNED BY public.telegram_users.id;
-
-
---
--- Name: users; Type: TABLE; Schema: public; Owner: kudab
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.users (
@@ -1169,31 +1659,29 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO kudab;
-
 --
--- Name: COLUMN users.avatar_url; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN users.avatar_url; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.users.avatar_url IS 'Ссылка на аватар пользователя';
 
 
 --
--- Name: COLUMN users.bio; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN users.bio; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.users.bio IS 'Коротко о себе';
 
 
 --
--- Name: COLUMN users.deleted_at; Type: COMMENT; Schema: public; Owner: kudab
+-- Name: COLUMN users.deleted_at; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.users.deleted_at IS 'Мягкое удаление';
 
 
 --
--- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: kudab
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.users_id_seq
@@ -1204,122 +1692,731 @@ CREATE SEQUENCE public.users_id_seq
     CACHE 1;
 
 
-ALTER TABLE public.users_id_seq OWNER TO kudab;
-
 --
--- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: kudab
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- Name: attachments id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: chat_broadcast_items; Type: TABLE; Schema: telegram; Owner: -
+--
+
+CREATE TABLE telegram.chat_broadcast_items (
+    id bigint NOT NULL,
+    broadcast_id bigint NOT NULL,
+    event_id bigint NOT NULL,
+    status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
+    planned_at timestamp(0) with time zone,
+    posted_at timestamp(0) with time zone,
+    error_message text,
+    created_at timestamp(0) with time zone,
+    updated_at timestamp(0) with time zone
+);
+
+
+--
+-- Name: COLUMN chat_broadcast_items.id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.id IS 'Primary key';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.broadcast_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.broadcast_id IS 'ID настроек рассылки (telegram.chat_broadcasts.id) для конкретного чата';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.event_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.event_id IS 'ID события (events.id), которое планируем/опубликовали';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.status; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.status IS 'Статус элемента очереди: pending/planned/posted/skipped/error';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.planned_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.planned_at IS 'Когда планируется публикация поста в канал';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.posted_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.posted_at IS 'Фактическое время отправки поста в канал';
+
+
+--
+-- Name: COLUMN chat_broadcast_items.error_message; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcast_items.error_message IS 'Последняя ошибка, если отправка не удалась';
+
+
+--
+-- Name: chat_broadcast_items_id_seq; Type: SEQUENCE; Schema: telegram; Owner: -
+--
+
+CREATE SEQUENCE telegram.chat_broadcast_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chat_broadcast_items_id_seq; Type: SEQUENCE OWNED BY; Schema: telegram; Owner: -
+--
+
+ALTER SEQUENCE telegram.chat_broadcast_items_id_seq OWNED BY telegram.chat_broadcast_items.id;
+
+
+--
+-- Name: chat_broadcasts; Type: TABLE; Schema: telegram; Owner: -
+--
+
+CREATE TABLE telegram.chat_broadcasts (
+    id bigint NOT NULL,
+    chat_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    settings json,
+    last_run_at timestamp(0) without time zone,
+    last_preview_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: COLUMN chat_broadcasts.chat_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcasts.chat_id IS 'FK на telegram.chats.id (привязанный телеграм-чат/канал)';
+
+
+--
+-- Name: COLUMN chat_broadcasts.enabled; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcasts.enabled IS 'Признак: включена ли рассылка для этого чата';
+
+
+--
+-- Name: COLUMN chat_broadcasts.settings; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcasts.settings IS 'Произвольные настройки рассылки в JSON (period, template_code и др.)';
+
+
+--
+-- Name: COLUMN chat_broadcasts.last_run_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcasts.last_run_at IS 'Время последней фактической отправки в канал';
+
+
+--
+-- Name: COLUMN chat_broadcasts.last_preview_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chat_broadcasts.last_preview_at IS 'Время последнего предпросмотра (например, в личку админа)';
+
+
+--
+-- Name: chat_broadcasts_id_seq; Type: SEQUENCE; Schema: telegram; Owner: -
+--
+
+CREATE SEQUENCE telegram.chat_broadcasts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chat_broadcasts_id_seq; Type: SEQUENCE OWNED BY; Schema: telegram; Owner: -
+--
+
+ALTER SEQUENCE telegram.chat_broadcasts_id_seq OWNED BY telegram.chat_broadcasts.id;
+
+
+--
+-- Name: chats; Type: TABLE; Schema: telegram; Owner: -
+--
+
+CREATE TABLE telegram.chats (
+    id bigint NOT NULL,
+    telegram_user_id bigint,
+    telegram_chat_id bigint NOT NULL,
+    chat_type character varying(32) NOT NULL,
+    title character varying(255),
+    username character varying(255),
+    is_active boolean DEFAULT true NOT NULL,
+    linked_at timestamp(0) without time zone,
+    unlinked_at timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone,
+    city_id bigint
+);
+
+
+--
+-- Name: TABLE chats; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON TABLE telegram.chats IS 'Телеграм-чаты (группы/каналы), привязанные к пользователям';
+
+
+--
+-- Name: COLUMN chats.id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.id IS 'PK';
+
+
+--
+-- Name: COLUMN chats.telegram_user_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.telegram_user_id IS 'FK на telegram.users.id — владелец/инициатор привязки';
+
+
+--
+-- Name: COLUMN chats.telegram_chat_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.telegram_chat_id IS 'ID чата/канала в Telegram (chat.id)';
+
+
+--
+-- Name: COLUMN chats.chat_type; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.chat_type IS 'Тип: private, group, supergroup, channel';
+
+
+--
+-- Name: COLUMN chats.title; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.title IS 'Название чата/канала';
+
+
+--
+-- Name: COLUMN chats.username; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.username IS '@username, если есть';
+
+
+--
+-- Name: COLUMN chats.is_active; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.is_active IS 'Привязка активна';
+
+
+--
+-- Name: COLUMN chats.linked_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.linked_at IS 'Когда привязали';
+
+
+--
+-- Name: COLUMN chats.unlinked_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.unlinked_at IS 'Когда отвязали (если есть)';
+
+
+--
+-- Name: COLUMN chats.city_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.chats.city_id IS 'ID города (cities.id), по которому подбираем события для рассылки';
+
+
+--
+-- Name: chats_id_seq; Type: SEQUENCE; Schema: telegram; Owner: -
+--
+
+CREATE SEQUENCE telegram.chats_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: chats_id_seq; Type: SEQUENCE OWNED BY; Schema: telegram; Owner: -
+--
+
+ALTER SEQUENCE telegram.chats_id_seq OWNED BY telegram.chats.id;
+
+
+--
+-- Name: message_templates; Type: TABLE; Schema: telegram; Owner: -
+--
+
+CREATE TABLE telegram.message_templates (
+    id bigint NOT NULL,
+    code character varying(64) NOT NULL,
+    locale character varying(8) DEFAULT 'ru'::character varying NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    body text NOT NULL,
+    show_images boolean DEFAULT true NOT NULL,
+    max_images smallint DEFAULT '3'::smallint NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone
+);
+
+
+--
+-- Name: COLUMN message_templates.id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.id IS 'Первичный ключ';
+
+
+--
+-- Name: COLUMN message_templates.code; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.code IS 'Системный код шаблона (например: basic, brief, promo)';
+
+
+--
+-- Name: COLUMN message_templates.locale; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.locale IS 'Язык шаблона (например: ru, en)';
+
+
+--
+-- Name: COLUMN message_templates.name; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.name IS 'Человекочитаемое название шаблона для админки';
+
+
+--
+-- Name: COLUMN message_templates.description; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.description IS 'Краткое описание/подсказка по назначению шаблона';
+
+
+--
+-- Name: COLUMN message_templates.body; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.body IS 'Текст шаблона с плейсхолдерами (HTML + {title}, {start_time|human} и т.п.)';
+
+
+--
+-- Name: COLUMN message_templates.show_images; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.show_images IS 'Показывать ли изображения вместе с этим шаблоном';
+
+
+--
+-- Name: COLUMN message_templates.max_images; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.max_images IS 'Максимальное количество изображений для этого шаблона';
+
+
+--
+-- Name: COLUMN message_templates.is_active; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.message_templates.is_active IS 'Флаг активности шаблона (можно ли его выбирать в настройках)';
+
+
+--
+-- Name: message_templates_id_seq; Type: SEQUENCE; Schema: telegram; Owner: -
+--
+
+CREATE SEQUENCE telegram.message_templates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: message_templates_id_seq; Type: SEQUENCE OWNED BY; Schema: telegram; Owner: -
+--
+
+ALTER SEQUENCE telegram.message_templates_id_seq OWNED BY telegram.message_templates.id;
+
+
+--
+-- Name: users; Type: TABLE; Schema: telegram; Owner: -
+--
+
+CREATE TABLE telegram.users (
+    id bigint NOT NULL,
+    user_id bigint,
+    telegram_id bigint NOT NULL,
+    telegram_username character varying(255),
+    first_name character varying(255),
+    last_name character varying(255),
+    language_code character varying(8),
+    chat_id bigint,
+    is_bot boolean DEFAULT false NOT NULL,
+    registered_at timestamp(0) without time zone,
+    last_active timestamp(0) without time zone,
+    created_at timestamp(0) without time zone,
+    updated_at timestamp(0) without time zone,
+    city_id bigint,
+    prefs jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- Name: TABLE users; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON TABLE telegram.users IS 'Пользователи Telegram';
+
+
+--
+-- Name: COLUMN users.id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.id IS 'PK';
+
+
+--
+-- Name: COLUMN users.user_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.user_id IS 'ID из таблицы users; null если не привязан';
+
+
+--
+-- Name: COLUMN users.telegram_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.telegram_id IS 'Уникальный идентификатор пользователя Telegram (from.id)';
+
+
+--
+-- Name: COLUMN users.telegram_username; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.telegram_username IS '@username (может отсутствовать/меняться)';
+
+
+--
+-- Name: COLUMN users.first_name; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.first_name IS 'Имя в Telegram';
+
+
+--
+-- Name: COLUMN users.last_name; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.last_name IS 'Фамилия в Telegram';
+
+
+--
+-- Name: COLUMN users.language_code; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.language_code IS 'Код языка, например "ru", "en", "en-US"';
+
+
+--
+-- Name: COLUMN users.chat_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.chat_id IS 'ID приватного чата с пользователем (chat.id)';
+
+
+--
+-- Name: COLUMN users.is_bot; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.is_bot IS 'Флаг: является ли аккаунт ботом';
+
+
+--
+-- Name: COLUMN users.registered_at; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.registered_at IS 'Когда впервые зафиксирован в системе';
+
+
+--
+-- Name: COLUMN users.last_active; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.last_active IS 'Последняя активность пользователя';
+
+
+--
+-- Name: COLUMN users.city_id; Type: COMMENT; Schema: telegram; Owner: -
+--
+
+COMMENT ON COLUMN telegram.users.city_id IS 'ID города из доменного справочника (без FK)';
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE; Schema: telegram; Owner: -
+--
+
+CREATE SEQUENCE telegram.users_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: telegram; Owner: -
+--
+
+ALTER SEQUENCE telegram.users_id_seq OWNED BY telegram.users.id;
+
+
+--
+-- Name: attachments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.attachments ALTER COLUMN id SET DEFAULT nextval('public.attachments_id_seq'::regclass);
 
 
 --
--- Name: communities id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: cities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cities ALTER COLUMN id SET DEFAULT nextval('public.cities_id_seq'::regclass);
+
+
+--
+-- Name: communities id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.communities ALTER COLUMN id SET DEFAULT nextval('public.communities_id_seq'::regclass);
 
 
 --
--- Name: community_social_links id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: community_social_links id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_social_links ALTER COLUMN id SET DEFAULT nextval('public.community_social_links_id_seq'::regclass);
 
 
 --
--- Name: context_interactions id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: context_interactions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_interactions ALTER COLUMN id SET DEFAULT nextval('public.context_interactions_id_seq'::regclass);
 
 
 --
--- Name: context_posts id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: context_posts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_posts ALTER COLUMN id SET DEFAULT nextval('public.context_posts_id_seq'::regclass);
 
 
 --
--- Name: events id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: error_logs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.error_logs ALTER COLUMN id SET DEFAULT nextval('public.error_logs_id_seq'::regclass);
+
+
+--
+-- Name: event_sources id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources ALTER COLUMN id SET DEFAULT nextval('public.event_sources_id_seq'::regclass);
+
+
+--
+-- Name: events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.events_id_seq'::regclass);
 
 
 --
--- Name: failed_jobs id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: failed_jobs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.failed_jobs ALTER COLUMN id SET DEFAULT nextval('public.failed_jobs_id_seq'::regclass);
 
 
 --
--- Name: interest_relations id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: interest_aliases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.interest_aliases ALTER COLUMN id SET DEFAULT nextval('public.interest_aliases_id_seq'::regclass);
+
+
+--
+-- Name: interest_relations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_relations ALTER COLUMN id SET DEFAULT nextval('public.interest_relations_id_seq'::regclass);
 
 
 --
--- Name: interests id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: interests id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interests ALTER COLUMN id SET DEFAULT nextval('public.interests_id_seq'::regclass);
 
 
 --
--- Name: jobs id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: jobs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jobs ALTER COLUMN id SET DEFAULT nextval('public.jobs_id_seq'::regclass);
 
 
 --
--- Name: migrations id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: llm_jobs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_jobs ALTER COLUMN id SET DEFAULT nextval('public.llm_jobs_id_seq'::regclass);
+
+
+--
+-- Name: migrations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.migrations ALTER COLUMN id SET DEFAULT nextval('public.migrations_id_seq'::regclass);
 
 
 --
--- Name: personal_access_tokens id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: parsing_statuses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parsing_statuses ALTER COLUMN id SET DEFAULT nextval('public.parsing_statuses_id_seq'::regclass);
+
+
+--
+-- Name: permissions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions ALTER COLUMN id SET DEFAULT nextval('public.permissions_id_seq'::regclass);
+
+
+--
+-- Name: personal_access_tokens id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.personal_access_tokens ALTER COLUMN id SET DEFAULT nextval('public.personal_access_tokens_id_seq'::regclass);
 
 
 --
--- Name: social_networks id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: roles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.roles ALTER COLUMN id SET DEFAULT nextval('public.roles_id_seq'::regclass);
+
+
+--
+-- Name: seeders id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seeders ALTER COLUMN id SET DEFAULT nextval('public.seeders_id_seq'::regclass);
+
+
+--
+-- Name: social_link_verifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_link_verifications ALTER COLUMN id SET DEFAULT nextval('public.social_link_verifications_id_seq'::regclass);
+
+
+--
+-- Name: social_networks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.social_networks ALTER COLUMN id SET DEFAULT nextval('public.social_networks_id_seq'::regclass);
 
 
 --
--- Name: telegram_users id; Type: DEFAULT; Schema: public; Owner: kudab
---
-
-ALTER TABLE ONLY public.telegram_users ALTER COLUMN id SET DEFAULT nextval('public.telegram_users_id_seq'::regclass);
-
-
---
--- Name: users id; Type: DEFAULT; Schema: public; Owner: kudab
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
 
 
 --
--- Name: attachments attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: chat_broadcast_items id; Type: DEFAULT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcast_items ALTER COLUMN id SET DEFAULT nextval('telegram.chat_broadcast_items_id_seq'::regclass);
+
+
+--
+-- Name: chat_broadcasts id; Type: DEFAULT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcasts ALTER COLUMN id SET DEFAULT nextval('telegram.chat_broadcasts_id_seq'::regclass);
+
+
+--
+-- Name: chats id; Type: DEFAULT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chats ALTER COLUMN id SET DEFAULT nextval('telegram.chats_id_seq'::regclass);
+
+
+--
+-- Name: message_templates id; Type: DEFAULT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.message_templates ALTER COLUMN id SET DEFAULT nextval('telegram.message_templates_id_seq'::regclass);
+
+
+--
+-- Name: users id; Type: DEFAULT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.users ALTER COLUMN id SET DEFAULT nextval('telegram.users_id_seq'::regclass);
+
+
+--
+-- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alembic_version
+    ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+
+
+--
+-- Name: attachments attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.attachments
@@ -1327,7 +2424,7 @@ ALTER TABLE ONLY public.attachments
 
 
 --
--- Name: cache_locks cache_locks_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: cache_locks cache_locks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cache_locks
@@ -1335,7 +2432,7 @@ ALTER TABLE ONLY public.cache_locks
 
 
 --
--- Name: cache cache_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: cache cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cache
@@ -1343,7 +2440,23 @@ ALTER TABLE ONLY public.cache
 
 
 --
--- Name: communities communities_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: cities cities_country_name_ci_uniq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cities
+    ADD CONSTRAINT cities_country_name_ci_uniq UNIQUE (country_code, name_ci);
+
+
+--
+-- Name: cities cities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cities
+    ADD CONSTRAINT cities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: communities communities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.communities
@@ -1351,7 +2464,7 @@ ALTER TABLE ONLY public.communities
 
 
 --
--- Name: community_interest community_interest_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: community_interest community_interest_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_interest
@@ -1359,7 +2472,15 @@ ALTER TABLE ONLY public.community_interest
 
 
 --
--- Name: community_social_links community_social_links_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: community_social_links community_network_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.community_social_links
+    ADD CONSTRAINT community_network_unique UNIQUE (community_id, social_network_id);
+
+
+--
+-- Name: community_social_links community_social_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_social_links
@@ -1367,7 +2488,7 @@ ALTER TABLE ONLY public.community_social_links
 
 
 --
--- Name: context_interactions context_interactions_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_interactions context_interactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_interactions
@@ -1375,7 +2496,7 @@ ALTER TABLE ONLY public.context_interactions
 
 
 --
--- Name: context_posts context_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_posts context_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_posts
@@ -1383,7 +2504,15 @@ ALTER TABLE ONLY public.context_posts
 
 
 --
--- Name: event_attendees event_attendees_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: error_logs error_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.error_logs
+    ADD CONSTRAINT error_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: event_attendees event_attendees_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_attendees
@@ -1391,7 +2520,7 @@ ALTER TABLE ONLY public.event_attendees
 
 
 --
--- Name: event_interest event_interest_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_interest event_interest_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_interest
@@ -1399,7 +2528,15 @@ ALTER TABLE ONLY public.event_interest
 
 
 --
--- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_sources event_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources
+    ADD CONSTRAINT event_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.events
@@ -1407,7 +2544,7 @@ ALTER TABLE ONLY public.events
 
 
 --
--- Name: failed_jobs failed_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: failed_jobs failed_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.failed_jobs
@@ -1415,7 +2552,7 @@ ALTER TABLE ONLY public.failed_jobs
 
 
 --
--- Name: failed_jobs failed_jobs_uuid_unique; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: failed_jobs failed_jobs_uuid_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.failed_jobs
@@ -1423,7 +2560,15 @@ ALTER TABLE ONLY public.failed_jobs
 
 
 --
--- Name: interest_links interest_links_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_aliases interest_aliases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.interest_aliases
+    ADD CONSTRAINT interest_aliases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: interest_links interest_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_links
@@ -1431,7 +2576,7 @@ ALTER TABLE ONLY public.interest_links
 
 
 --
--- Name: interest_relations interest_relations_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_relations interest_relations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_relations
@@ -1439,7 +2584,7 @@ ALTER TABLE ONLY public.interest_relations
 
 
 --
--- Name: interest_user interest_user_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_user interest_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_user
@@ -1447,7 +2592,7 @@ ALTER TABLE ONLY public.interest_user
 
 
 --
--- Name: interests interests_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interests interests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interests
@@ -1455,7 +2600,7 @@ ALTER TABLE ONLY public.interests
 
 
 --
--- Name: job_batches job_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: job_batches job_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.job_batches
@@ -1463,7 +2608,7 @@ ALTER TABLE ONLY public.job_batches
 
 
 --
--- Name: jobs jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: jobs jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jobs
@@ -1471,7 +2616,15 @@ ALTER TABLE ONLY public.jobs
 
 
 --
--- Name: migrations migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: llm_jobs llm_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.llm_jobs
+    ADD CONSTRAINT llm_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: migrations migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.migrations
@@ -1479,7 +2632,39 @@ ALTER TABLE ONLY public.migrations
 
 
 --
--- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: model_has_permissions model_has_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_has_permissions
+    ADD CONSTRAINT model_has_permissions_pkey PRIMARY KEY (permission_id, model_id, model_type);
+
+
+--
+-- Name: model_has_roles model_has_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_has_roles
+    ADD CONSTRAINT model_has_roles_pkey PRIMARY KEY (role_id, model_id, model_type);
+
+
+--
+-- Name: parsing_statuses parsing_statuses_link_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parsing_statuses
+    ADD CONSTRAINT parsing_statuses_link_unique UNIQUE (community_social_link_id);
+
+
+--
+-- Name: parsing_statuses parsing_statuses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parsing_statuses
+    ADD CONSTRAINT parsing_statuses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.password_reset_tokens
@@ -1487,7 +2672,23 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 
 --
--- Name: personal_access_tokens personal_access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: permissions permissions_name_guard_name_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT permissions_name_guard_name_unique UNIQUE (name, guard_name);
+
+
+--
+-- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.permissions
+    ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: personal_access_tokens personal_access_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.personal_access_tokens
@@ -1495,7 +2696,7 @@ ALTER TABLE ONLY public.personal_access_tokens
 
 
 --
--- Name: personal_access_tokens personal_access_tokens_token_unique; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: personal_access_tokens personal_access_tokens_token_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.personal_access_tokens
@@ -1503,7 +2704,47 @@ ALTER TABLE ONLY public.personal_access_tokens
 
 
 --
--- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: role_has_permissions role_has_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_has_permissions
+    ADD CONSTRAINT role_has_permissions_pkey PRIMARY KEY (permission_id, role_id);
+
+
+--
+-- Name: roles roles_name_guard_name_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_name_guard_name_unique UNIQUE (name, guard_name);
+
+
+--
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.roles
+    ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: seeders seeders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seeders
+    ADD CONSTRAINT seeders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: seeders seeders_seeder_name_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seeders
+    ADD CONSTRAINT seeders_seeder_name_unique UNIQUE (seeder_name);
+
+
+--
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sessions
@@ -1511,7 +2752,15 @@ ALTER TABLE ONLY public.sessions
 
 
 --
--- Name: social_networks social_networks_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: social_link_verifications social_link_verifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_link_verifications
+    ADD CONSTRAINT social_link_verifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: social_networks social_networks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.social_networks
@@ -1519,7 +2768,7 @@ ALTER TABLE ONLY public.social_networks
 
 
 --
--- Name: social_networks social_networks_slug_unique; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: social_networks social_networks_slug_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.social_networks
@@ -1527,23 +2776,7 @@ ALTER TABLE ONLY public.social_networks
 
 
 --
--- Name: telegram_users telegram_users_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
---
-
-ALTER TABLE ONLY public.telegram_users
-    ADD CONSTRAINT telegram_users_pkey PRIMARY KEY (id);
-
-
---
--- Name: telegram_users telegram_users_telegram_id_unique; Type: CONSTRAINT; Schema: public; Owner: kudab
---
-
-ALTER TABLE ONLY public.telegram_users
-    ADD CONSTRAINT telegram_users_telegram_id_unique UNIQUE (telegram_id);
-
-
---
--- Name: interest_relations unique_interest_relation; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_relations unique_interest_relation; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_relations
@@ -1551,7 +2784,15 @@ ALTER TABLE ONLY public.interest_relations
 
 
 --
--- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_sources uq_event_sources_source_post_event; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources
+    ADD CONSTRAINT uq_event_sources_source_post_event UNIQUE (source, post_external_id, event_id);
+
+
+--
+-- Name: users users_email_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -1559,7 +2800,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: kudab
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -1567,210 +2808,656 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: attachments_parent_type_parent_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: chat_broadcast_items chat_broadcast_items_broadcast_event_uq; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcast_items
+    ADD CONSTRAINT chat_broadcast_items_broadcast_event_uq UNIQUE (broadcast_id, event_id);
+
+
+--
+-- Name: chat_broadcast_items chat_broadcast_items_pkey; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcast_items
+    ADD CONSTRAINT chat_broadcast_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chat_broadcasts chat_broadcasts_chat_id_uq; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcasts
+    ADD CONSTRAINT chat_broadcasts_chat_id_uq UNIQUE (chat_id);
+
+
+--
+-- Name: chat_broadcasts chat_broadcasts_pkey; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcasts
+    ADD CONSTRAINT chat_broadcasts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chats chats_pkey; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chats
+    ADD CONSTRAINT chats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: message_templates message_templates_pkey; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.message_templates
+    ADD CONSTRAINT message_templates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: chats telegram_chats_chat_id_unique; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chats
+    ADD CONSTRAINT telegram_chats_chat_id_unique UNIQUE (telegram_chat_id);
+
+
+--
+-- Name: message_templates telegram_message_templates_code_locale_unique; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.message_templates
+    ADD CONSTRAINT telegram_message_templates_code_locale_unique UNIQUE (code, locale);
+
+
+--
+-- Name: users telegram_users_telegram_id_uniq; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.users
+    ADD CONSTRAINT telegram_users_telegram_id_uniq UNIQUE (telegram_id);
+
+
+--
+-- Name: users telegram_users_telegram_id_unique; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.users
+    ADD CONSTRAINT telegram_users_telegram_id_unique UNIQUE (telegram_id);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: attachments_parent_type_parent_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX attachments_parent_type_parent_id_index ON public.attachments USING btree (parent_type, parent_id);
 
 
 --
--- Name: attachments_type_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: attachments_parent_type_parent_id_type_url_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX attachments_parent_type_parent_id_type_url_uniq ON public.attachments USING btree (parent_type, parent_id, type, url) WHERE (url IS NOT NULL);
+
+
+--
+-- Name: attachments_type_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX attachments_type_index ON public.attachments USING btree (type);
 
 
 --
--- Name: communities_external_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: cities_location_gix; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX communities_external_id_index ON public.communities USING btree (external_id);
-
-
---
--- Name: communities_source_index; Type: INDEX; Schema: public; Owner: kudab
---
-
-CREATE INDEX communities_source_index ON public.communities USING btree (source);
+CREATE INDEX cities_location_gix ON public.cities USING gist (location);
 
 
 --
--- Name: community_social_links_community_id_social_network_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: cities_status_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cities_status_idx ON public.cities USING btree (status);
+
+
+--
+-- Name: communities_city_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX communities_city_id_idx ON public.communities USING btree (city_id);
+
+
+--
+-- Name: communities_city_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX communities_city_index ON public.communities USING btree (city);
+
+
+--
+-- Name: communities_is_verified_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX communities_is_verified_index ON public.communities USING btree (is_verified);
+
+
+--
+-- Name: communities_verification_status_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX communities_verification_status_index ON public.communities USING btree (verification_status);
+
+
+--
+-- Name: community_social_links_community_id_social_network_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX community_social_links_community_id_social_network_id_index ON public.community_social_links USING btree (community_id, social_network_id);
 
 
 --
--- Name: community_social_links_external_community_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: community_social_links_external_community_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX community_social_links_external_community_id_index ON public.community_social_links USING btree (external_community_id);
 
 
 --
--- Name: context_interactions_post_id_user_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: community_social_links_last_checked_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX community_social_links_last_checked_at_idx ON public.community_social_links USING btree (last_checked_at);
+
+
+--
+-- Name: context_interactions_post_id_user_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_interactions_post_id_user_id_index ON public.context_interactions USING btree (post_id, user_id);
 
 
 --
--- Name: context_interactions_status_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_interactions_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_interactions_status_index ON public.context_interactions USING btree (status);
 
 
 --
--- Name: context_interactions_type_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_interactions_type_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_interactions_type_index ON public.context_interactions USING btree (type);
 
 
 --
--- Name: context_posts_external_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_posts_external_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_posts_external_id_index ON public.context_posts USING btree (external_id);
 
 
 --
--- Name: context_posts_published_at_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_posts_published_at_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_posts_published_at_index ON public.context_posts USING btree (published_at);
 
 
 --
--- Name: context_posts_source_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_posts_social_link_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX context_posts_social_link_id_index ON public.context_posts USING btree (social_link_id);
+
+
+--
+-- Name: context_posts_source_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_posts_source_index ON public.context_posts USING btree (source);
 
 
 --
--- Name: context_posts_status_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: context_posts_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX context_posts_status_index ON public.context_posts USING btree (status);
 
 
 --
--- Name: event_attendees_status_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: ctx_posts_src_ext_social_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ctx_posts_src_ext_social_uniq ON public.context_posts USING btree (source, external_id, social_link_id) WHERE (social_link_id IS NOT NULL);
+
+
+--
+-- Name: error_logs_community_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX error_logs_community_id_index ON public.error_logs USING btree (community_id);
+
+
+--
+-- Name: error_logs_community_social_link_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX error_logs_community_social_link_id_index ON public.error_logs USING btree (community_social_link_id);
+
+
+--
+-- Name: error_logs_type_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX error_logs_type_index ON public.error_logs USING btree (type);
+
+
+--
+-- Name: error_logs_type_job_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX error_logs_type_job_index ON public.error_logs USING btree (type, job);
+
+
+--
+-- Name: event_attendees_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX event_attendees_status_index ON public.event_attendees USING btree (status);
 
 
 --
--- Name: events_city_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: event_interest_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX event_interest_unique ON public.event_interest USING btree (event_id, interest_id);
+
+
+--
+-- Name: event_sources_event_context_post_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX event_sources_event_context_post_uniq ON public.event_sources USING btree (event_id, context_post_id) WHERE (context_post_id IS NOT NULL);
+
+
+--
+-- Name: events_city_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX events_city_id_idx ON public.events USING btree (city_id);
+
+
+--
+-- Name: events_city_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX events_city_index ON public.events USING btree (city);
 
 
 --
--- Name: events_location_gix; Type: INDEX; Schema: public; Owner: kudab
+-- Name: events_location_gix; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX events_location_gix ON public.events USING gist (location);
 
 
 --
--- Name: events_start_time_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: events_start_time_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX events_start_time_index ON public.events USING btree (start_time);
 
 
 --
--- Name: events_status_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: events_status_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX events_status_index ON public.events USING btree (status);
 
 
 --
--- Name: interest_links_parent_type_parent_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: idx_attachments_parent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_attachments_parent ON public.attachments USING btree (parent_type, parent_id);
+
+
+--
+-- Name: idx_communities_desc_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_communities_desc_trgm ON public.communities USING gin (lower(description) public.gin_trgm_ops);
+
+
+--
+-- Name: idx_communities_name_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_communities_name_trgm ON public.communities USING gin (lower((name)::text) public.gin_trgm_ops);
+
+
+--
+-- Name: idx_communities_verification_meta_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_communities_verification_meta_gin ON public.communities USING gin (verification_meta);
+
+
+--
+-- Name: idx_event_sources_context_post_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_event_sources_context_post_id ON public.event_sources USING btree (context_post_id);
+
+
+--
+-- Name: idx_event_sources_event_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_event_sources_event_id ON public.event_sources USING btree (event_id);
+
+
+--
+-- Name: idx_event_sources_published_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_event_sources_published_at ON public.event_sources USING btree (published_at);
+
+
+--
+-- Name: idx_events_desc_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_desc_trgm ON public.events USING gin (lower(description) public.gin_trgm_ops);
+
+
+--
+-- Name: idx_events_original_post_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_original_post_id ON public.events USING btree (original_post_id);
+
+
+--
+-- Name: idx_events_start_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_start_time ON public.events USING btree (start_time);
+
+
+--
+-- Name: idx_events_time_geo; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_time_geo ON public.events USING btree (start_time, lat_round, lon_round) WHERE ((lat_round IS NOT NULL) AND (lon_round IS NOT NULL) AND (deleted_at IS NULL));
+
+
+--
+-- Name: idx_events_title_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_events_title_trgm ON public.events USING gin (lower((title)::text) public.gin_trgm_ops);
+
+
+--
+-- Name: idx_interests_name_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_interests_name_trgm ON public.interests USING gin (lower((name)::text) public.gin_trgm_ops);
+
+
+--
+-- Name: idx_slv_comm_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slv_comm_time ON public.social_link_verifications USING btree (community_id, checked_at);
+
+
+--
+-- Name: idx_slv_link_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slv_link_time ON public.social_link_verifications USING btree (community_social_link_id, checked_at);
+
+
+--
+-- Name: idx_slv_raw_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slv_raw_gin ON public.social_link_verifications USING gin (raw);
+
+
+--
+-- Name: interest_aliases_alias_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX interest_aliases_alias_unique ON public.interest_aliases USING btree (lower((alias)::text));
+
+
+--
+-- Name: interest_aliases_interest_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX interest_aliases_interest_id_index ON public.interest_aliases USING btree (interest_id);
+
+
+--
+-- Name: interest_links_parent_type_parent_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX interest_links_parent_type_parent_id_index ON public.interest_links USING btree (parent_type, parent_id);
 
 
 --
--- Name: interest_relations_parent_interest_id_child_interest_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: interest_relations_parent_interest_id_child_interest_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX interest_relations_parent_interest_id_child_interest_id_index ON public.interest_relations USING btree (parent_interest_id, child_interest_id);
 
 
 --
--- Name: interests_name_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: interests_name_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX interests_name_idx ON public.interests USING btree (lower((name)::text));
+
+
+--
+-- Name: interests_name_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX interests_name_index ON public.interests USING btree (name);
 
 
 --
--- Name: interests_parent_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: interests_parent_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX interests_parent_id_index ON public.interests USING btree (parent_id);
 
 
 --
--- Name: jobs_queue_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: interests_slug_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX interests_slug_unique ON public.interests USING btree (lower((slug)::text));
+
+
+--
+-- Name: jobs_queue_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX jobs_queue_index ON public.jobs USING btree (queue);
 
 
 --
--- Name: personal_access_tokens_tokenable_type_tokenable_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: llm_jobs_context_post_id_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX llm_jobs_context_post_id_index ON public.llm_jobs USING btree (context_post_id);
+
+
+--
+-- Name: llm_jobs_ctx_task_prompt_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX llm_jobs_ctx_task_prompt_uniq ON public.llm_jobs USING btree (context_post_id, task, prompt_version) WHERE ((context_post_id IS NOT NULL) AND (task IS NOT NULL) AND (prompt_version IS NOT NULL));
+
+
+--
+-- Name: llm_jobs_prompt_version_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX llm_jobs_prompt_version_index ON public.llm_jobs USING btree (prompt_version);
+
+
+--
+-- Name: llm_jobs_retry_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX llm_jobs_retry_at_index ON public.llm_jobs USING btree (retry_at);
+
+
+--
+-- Name: llm_jobs_status_created_at_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX llm_jobs_status_created_at_index ON public.llm_jobs USING btree (status, created_at);
+
+
+--
+-- Name: llm_jobs_task_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX llm_jobs_task_index ON public.llm_jobs USING btree (task);
+
+
+--
+-- Name: model_has_permissions_model_id_model_type_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX model_has_permissions_model_id_model_type_index ON public.model_has_permissions USING btree (model_id, model_type);
+
+
+--
+-- Name: model_has_roles_model_id_model_type_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX model_has_roles_model_id_model_type_index ON public.model_has_roles USING btree (model_id, model_type);
+
+
+--
+-- Name: parsing_statuses_frozen_unfreeze_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX parsing_statuses_frozen_unfreeze_index ON public.parsing_statuses USING btree (is_frozen, unfreeze_at);
+
+
+--
+-- Name: personal_access_tokens_tokenable_type_tokenable_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX personal_access_tokens_tokenable_type_tokenable_id_index ON public.personal_access_tokens USING btree (tokenable_type, tokenable_id);
 
 
 --
--- Name: sessions_last_activity_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: sessions_last_activity_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX sessions_last_activity_index ON public.sessions USING btree (last_activity);
 
 
 --
--- Name: sessions_user_id_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: sessions_user_id_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX sessions_user_id_index ON public.sessions USING btree (user_id);
 
 
 --
--- Name: social_networks_name_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: social_networks_name_index; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX social_networks_name_index ON public.social_networks USING btree (name);
 
 
 --
--- Name: telegram_users_last_active_index; Type: INDEX; Schema: public; Owner: kudab
+-- Name: social_networks_slug_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX telegram_users_last_active_index ON public.telegram_users USING btree (last_active);
-
-
---
--- Name: telegram_users_telegram_username_index; Type: INDEX; Schema: public; Owner: kudab
---
-
-CREATE INDEX telegram_users_telegram_username_index ON public.telegram_users USING btree (telegram_username);
+CREATE INDEX social_networks_slug_index ON public.social_networks USING btree (slug);
 
 
 --
--- Name: community_interest community_interest_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: uniq_events_dedup_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uniq_events_dedup_active ON public.events USING btree (dedup_key) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: chat_broadcast_items_status_planned_idx; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX chat_broadcast_items_status_planned_idx ON telegram.chat_broadcast_items USING btree (status, planned_at);
+
+
+--
+-- Name: telegram_chats_active_type_idx; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX telegram_chats_active_type_idx ON telegram.chats USING btree (is_active, chat_type);
+
+
+--
+-- Name: telegram_chats_user_idx; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX telegram_chats_user_idx ON telegram.chats USING btree (telegram_user_id);
+
+
+--
+-- Name: telegram_users_telegram_id_index; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX telegram_users_telegram_id_index ON telegram.users USING btree (telegram_id);
+
+
+--
+-- Name: telegram_users_user_id_index; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX telegram_users_user_id_index ON telegram.users USING btree (user_id);
+
+
+--
+-- Name: tg_users_city_id_idx; Type: INDEX; Schema: telegram; Owner: -
+--
+
+CREATE INDEX tg_users_city_id_idx ON telegram.users USING btree (city_id);
+
+
+--
+-- Name: communities communities_city_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.communities
+    ADD CONSTRAINT communities_city_id_foreign FOREIGN KEY (city_id) REFERENCES public.cities(id) ON DELETE SET NULL;
+
+
+--
+-- Name: community_interest community_interest_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_interest
@@ -1778,7 +3465,7 @@ ALTER TABLE ONLY public.community_interest
 
 
 --
--- Name: community_interest community_interest_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: community_interest community_interest_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_interest
@@ -1786,7 +3473,7 @@ ALTER TABLE ONLY public.community_interest
 
 
 --
--- Name: community_social_links community_social_links_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: community_social_links community_social_links_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_social_links
@@ -1794,7 +3481,15 @@ ALTER TABLE ONLY public.community_social_links
 
 
 --
--- Name: community_social_links community_social_links_social_network_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: community_social_links community_social_links_last_verification_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.community_social_links
+    ADD CONSTRAINT community_social_links_last_verification_id_foreign FOREIGN KEY (last_verification_id) REFERENCES public.social_link_verifications(id) ON DELETE SET NULL;
+
+
+--
+-- Name: community_social_links community_social_links_social_network_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.community_social_links
@@ -1802,7 +3497,7 @@ ALTER TABLE ONLY public.community_social_links
 
 
 --
--- Name: context_interactions context_interactions_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_interactions context_interactions_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_interactions
@@ -1810,7 +3505,7 @@ ALTER TABLE ONLY public.context_interactions
 
 
 --
--- Name: context_interactions context_interactions_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_interactions context_interactions_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_interactions
@@ -1818,7 +3513,7 @@ ALTER TABLE ONLY public.context_interactions
 
 
 --
--- Name: context_posts context_posts_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_posts context_posts_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.context_posts
@@ -1826,7 +3521,15 @@ ALTER TABLE ONLY public.context_posts
 
 
 --
--- Name: event_attendees event_attendees_event_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: context_posts context_posts_social_link_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_posts
+    ADD CONSTRAINT context_posts_social_link_id_foreign FOREIGN KEY (social_link_id) REFERENCES public.community_social_links(id) ON DELETE SET NULL;
+
+
+--
+-- Name: event_attendees event_attendees_event_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_attendees
@@ -1834,7 +3537,7 @@ ALTER TABLE ONLY public.event_attendees
 
 
 --
--- Name: event_attendees event_attendees_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_attendees event_attendees_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_attendees
@@ -1842,7 +3545,7 @@ ALTER TABLE ONLY public.event_attendees
 
 
 --
--- Name: event_interest event_interest_event_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_interest event_interest_event_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_interest
@@ -1850,7 +3553,7 @@ ALTER TABLE ONLY public.event_interest
 
 
 --
--- Name: event_interest event_interest_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_interest event_interest_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.event_interest
@@ -1858,7 +3561,39 @@ ALTER TABLE ONLY public.event_interest
 
 
 --
--- Name: events events_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: event_sources event_sources_context_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources
+    ADD CONSTRAINT event_sources_context_post_id_foreign FOREIGN KEY (context_post_id) REFERENCES public.context_posts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: event_sources event_sources_event_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources
+    ADD CONSTRAINT event_sources_event_id_foreign FOREIGN KEY (event_id) REFERENCES public.events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: event_sources event_sources_social_link_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_sources
+    ADD CONSTRAINT event_sources_social_link_id_foreign FOREIGN KEY (social_link_id) REFERENCES public.community_social_links(id) ON DELETE CASCADE;
+
+
+--
+-- Name: events events_city_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_city_id_foreign FOREIGN KEY (city_id) REFERENCES public.cities(id) ON DELETE SET NULL;
+
+
+--
+-- Name: events events_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.events
@@ -1866,7 +3601,7 @@ ALTER TABLE ONLY public.events
 
 
 --
--- Name: events events_original_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: events events_original_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.events
@@ -1874,7 +3609,15 @@ ALTER TABLE ONLY public.events
 
 
 --
--- Name: interest_links interest_links_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_aliases interest_aliases_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.interest_aliases
+    ADD CONSTRAINT interest_aliases_interest_id_foreign FOREIGN KEY (interest_id) REFERENCES public.interests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: interest_links interest_links_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_links
@@ -1882,7 +3625,7 @@ ALTER TABLE ONLY public.interest_links
 
 
 --
--- Name: interest_relations interest_relations_child_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_relations interest_relations_child_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_relations
@@ -1890,7 +3633,7 @@ ALTER TABLE ONLY public.interest_relations
 
 
 --
--- Name: interest_relations interest_relations_parent_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_relations interest_relations_parent_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_relations
@@ -1898,7 +3641,7 @@ ALTER TABLE ONLY public.interest_relations
 
 
 --
--- Name: interest_user interest_user_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_user interest_user_interest_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_user
@@ -1906,7 +3649,7 @@ ALTER TABLE ONLY public.interest_user
 
 
 --
--- Name: interest_user interest_user_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interest_user interest_user_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interest_user
@@ -1914,7 +3657,7 @@ ALTER TABLE ONLY public.interest_user
 
 
 --
--- Name: interests interests_parent_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: interests interests_parent_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.interests
@@ -1922,10 +3665,122 @@ ALTER TABLE ONLY public.interests
 
 
 --
--- Name: telegram_users telegram_users_user_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: kudab
+-- Name: llm_jobs llm_jobs_context_post_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.telegram_users
+ALTER TABLE ONLY public.llm_jobs
+    ADD CONSTRAINT llm_jobs_context_post_id_foreign FOREIGN KEY (context_post_id) REFERENCES public.context_posts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: model_has_permissions model_has_permissions_permission_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_has_permissions
+    ADD CONSTRAINT model_has_permissions_permission_id_foreign FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: model_has_roles model_has_roles_role_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_has_roles
+    ADD CONSTRAINT model_has_roles_role_id_foreign FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: parsing_statuses parsing_statuses_link_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parsing_statuses
+    ADD CONSTRAINT parsing_statuses_link_fk FOREIGN KEY (community_social_link_id) REFERENCES public.community_social_links(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_has_permissions role_has_permissions_permission_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_has_permissions
+    ADD CONSTRAINT role_has_permissions_permission_id_foreign FOREIGN KEY (permission_id) REFERENCES public.permissions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: role_has_permissions role_has_permissions_role_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.role_has_permissions
+    ADD CONSTRAINT role_has_permissions_role_id_foreign FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: social_link_verifications social_link_verifications_community_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_link_verifications
+    ADD CONSTRAINT social_link_verifications_community_id_foreign FOREIGN KEY (community_id) REFERENCES public.communities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: social_link_verifications social_link_verifications_community_social_link_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_link_verifications
+    ADD CONSTRAINT social_link_verifications_community_social_link_id_foreign FOREIGN KEY (community_social_link_id) REFERENCES public.community_social_links(id) ON DELETE CASCADE;
+
+
+--
+-- Name: social_link_verifications social_link_verifications_social_network_id_foreign; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_link_verifications
+    ADD CONSTRAINT social_link_verifications_social_network_id_foreign FOREIGN KEY (social_network_id) REFERENCES public.social_networks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chat_broadcast_items chat_broadcast_items_broadcast_fk; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcast_items
+    ADD CONSTRAINT chat_broadcast_items_broadcast_fk FOREIGN KEY (broadcast_id) REFERENCES telegram.chat_broadcasts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chat_broadcast_items chat_broadcast_items_event_fk; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcast_items
+    ADD CONSTRAINT chat_broadcast_items_event_fk FOREIGN KEY (event_id) REFERENCES public.events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chat_broadcasts telegram_chat_broadcasts_chat_id_foreign; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chat_broadcasts
+    ADD CONSTRAINT telegram_chat_broadcasts_chat_id_foreign FOREIGN KEY (chat_id) REFERENCES telegram.chats(id) ON DELETE CASCADE;
+
+
+--
+-- Name: chats telegram_chats_city_fk; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chats
+    ADD CONSTRAINT telegram_chats_city_fk FOREIGN KEY (city_id) REFERENCES public.cities(id) ON DELETE SET NULL;
+
+
+--
+-- Name: chats telegram_chats_telegram_user_id_foreign; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.chats
+    ADD CONSTRAINT telegram_chats_telegram_user_id_foreign FOREIGN KEY (telegram_user_id) REFERENCES telegram.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: users telegram_users_user_id_foreign; Type: FK CONSTRAINT; Schema: telegram; Owner: -
+--
+
+ALTER TABLE ONLY telegram.users
     ADD CONSTRAINT telegram_users_user_id_foreign FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 

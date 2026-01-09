@@ -1,6 +1,7 @@
 services:
   # === API ===================================================================
   kudab-api:
+    image: ${API_IMAGE:-kudab-api}
     restart: always
     env_file:
       - ./services/kudab-api/.env
@@ -23,6 +24,7 @@ services:
 
   # === PARSER + QUEUE ========================================================
   kudab-parser:
+    image: ${PARSER_IMAGE:-kudab-parser}
     restart: always
     env_file:
       - ./services/kudab-parser/.env
@@ -49,6 +51,7 @@ services:
 
   # Horizon (воркеры очередей парсера)
   kudab-horizon:
+    image: ${PARSER_IMAGE:-kudab-parser}
     restart: always
     env_file:
       - ./services/kudab-parser/.env
