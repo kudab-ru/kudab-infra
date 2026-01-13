@@ -5,10 +5,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN}
     volumes:
       - ./services/kudab-api:/var/www/html:rw
       - ./services/kudab-api/vendor:/var/www/html/vendor
       - ./services/kudab-api/storage:/var/www/html/storage
+
+  kudab-api-scheduler:
+    environment:
+      BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN}
 
   kudab-parser:
     environment:
@@ -49,6 +54,7 @@ services:
   kudab-frontend:
     environment:
       NODE_ENV: development
+    command: sh -lc "test -d node_modules || npm ci; npm run dev -- --host 0.0.0.0 --port 3000"
     ports:
       - "3000:3000"
     volumes:

@@ -16,6 +16,10 @@ echo "== 1) RESET: truncate tables + clear redis + horizon terminate =="
 $DC exec -T kudab-horizon php artisan dev:reset --seed=0 --redis=1 --horizon=1
 
 echo
+echo "== 1.1) HARD restart horizon (reload code in workers) =="
+$DC restart kudab-horizon
+
+echo
 echo "== 2) Ждём horizon healthy =="
 cid="$($DC ps -q kudab-horizon)"
 test -n "$cid" || (echo "ERROR: kudab-horizon container not found"; exit 2)
@@ -69,6 +73,25 @@ for cid in $ids; do
 done
 
 echo
+echo "== 6.1) ASSERT: communities.city_id is filled =="
+$DC exec -T kudab-horizon php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+
+$n = DB::table("communities")->whereNull("city_id")->count();
+echo "communities_null_city_id={$n}\n";
+if ($n > 0) {
+  $rows = DB::table("communities")->select("id","name","city","city_id")->whereNull("city_id")->limit(20)->get();
+  foreach ($rows as $r) {
+    echo "  id={$r->id} city={$r->city} name={$r->name}\n";
+  }
+  exit(2);
+}
+'
+
+echo
 echo "== 7) parser:events:extract (prompt_version=${PROMPT_VER}) =="
 $DC exec -T -e LLM_EVENTS_PROMPT_VERSION="$PROMPT_VER" kudab-horizon \
   php artisan parser:events:extract --limit="$EVENTS_EXTRACT_LIMIT"
@@ -120,6 +143,40 @@ for lid in $LIDS; do
     echo "OK consumed {$id}\n";
   '
 done
+
+echo
+echo "== 9.1) ASSERT: events.city_id filled when city is present =="
+$DC exec -T kudab-horizon php -r '
+require "vendor/autoload.php";
+$app = require "bootstrap/app.php";
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+
+$n = DB::table("events")
+  ->whereNull("deleted_at")
+  ->whereNotNull("city")
+  ->where("city","<>","")
+  ->whereNull("city_id")
+  ->count();
+
+echo "events_null_city_id_with_city={$n}\n";
+if ($n > 0) {
+  $rows = DB::table("events")
+    ->select("id","community_id","original_post_id","city","city_id","status","updated_at")
+    ->whereNull("deleted_at")
+    ->whereNotNull("city")
+    ->where("city","<>","")
+    ->whereNull("city_id")
+    ->orderBy("id","desc")
+    ->limit(20)
+    ->get();
+
+  foreach ($rows as $r) {
+    echo "  id={$r->id} community_id={$r->community_id} post={$r->original_post_id} city={$r->city} status={$r->status} updated_at={$r->updated_at}\n";
+  }
+  exit(2);
+}
+'
 
 echo
 echo "== 10) ИТОГ =="
