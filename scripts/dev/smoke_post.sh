@@ -9,6 +9,10 @@ if [[ -z "$POST_ID" ]]; then
   echo "Usage: POST_ID=45 bash scripts/dev/smoke_post.sh"
   exit 2
 fi
+if ! [[ "$POST_ID" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: POST_ID must be numeric"
+  exit 2
+fi
 
 # PROMPT_VER: берём из env, иначе из .env, иначе v5
 PROMPT_VER="${PROMPT_VER:-}"
@@ -163,9 +167,14 @@ where task='\''events_extract'\''
   echo "llm_jobs => $row"
   pend="$(echo "$row" | awk -F'|' '{print $2}')"
   total="$(echo "$row" | awk -F'|' '{print $1}')"
-  if [[ "${total:-0}" -gt 0 && "${pend:-999}" -eq 0 ]]; then
+
+  if [[ "${pend:-0}" -eq 0 ]]; then
+    if [[ "${total:-0}" -eq 0 ]]; then
+      echo "WARN: llm_jobs total=0 (nothing to wait)"
+    fi
     break
   fi
+
   sleep "$POLL_SEC"
 done
 
@@ -174,17 +183,21 @@ echo "== 8) CONSUME (sync) llm_jobs -> events for this post =="
 LIDS="$(
   $DC exec -T kudab-db sh -lc \
   'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "
-select id
-from llm_jobs
-where task='\''events_extract'\''
-  and context_post_id='"$POST_ID"'
-  and prompt_version='\'''"$PROMPT_VER"''\''
-  and status='\''completed'\''
-order by id;
+select lj.id
+from llm_jobs lj
+left join events e
+  on e.original_post_id = lj.context_post_id
+ and e.deleted_at is null
+where lj.task='\''events_extract'\''
+  and lj.context_post_id='"$POST_ID"'
+  and lj.prompt_version='\'''"$PROMPT_VER"''\''
+  and lj.status='\''completed'\''
+  and e.id is null
+order by lj.id;
 "'
 )"
 if [[ -z "$LIDS" ]]; then
-  echo "WARN: no completed llm_jobs found for post_id=$POST_ID version=$PROMPT_VER"
+  echo "WARN: no completed llm_jobs found for post_id=$POST_ID version=$PROMPT_VER (or already consumed)"
 else
   k=0
   for lid in $LIDS; do

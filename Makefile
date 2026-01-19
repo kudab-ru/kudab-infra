@@ -32,6 +32,10 @@ SMOKE_POSTS_ATTEMPTS  ?= 60
 SMOKE_LLM_ATTEMPTS    ?= 120   # 240s
 SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов под bench
 
+# dev-update: инкрементальная подкачка постов + извлечение событий + consume
+UPDATE_POLL_SEC       ?= 2
+UPDATE_ATTEMPTS       ?= 20    # best-effort wait ~40s
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
@@ -43,6 +47,7 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: dev-smoke-post dev-post
 .PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
 .PHONY: dev-test
+.PHONY: dev-update dev-update-posts dev-update-wait-posts dev-update-extract dev-update-wait dev-update-consume dev-update-summary
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -51,6 +56,7 @@ help:
 	@printf "\033[1;34m╰──────────────────────────────────────────────────────────────╯\033[0m\n\n"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "init"          "🔧  Клонирование подмодулей и первичная инициализация"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"           "🧪  Запуск DEV окружения (hot-reload, маунты)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-update"    "⬆️  DEV инкрементально: подтянуть новые посты + extract + consume"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke"     "🧪  DEV smoke (reset+wait-horizon+seed+posts+llm+report)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke-post" "🧪  DEV smoke по одному существующему посту (POST_ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-reindex"   "🔁  DEV полный прогон (reset+posts+verify+events_extract+wait)"
@@ -400,6 +406,41 @@ group by 1 order by 1;"
 	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
 select count(*) as events_total \
 from events where deleted_at is null;"
+
+# -----------------------------
+# DEV UPDATE (incremental): posts -> events_extract -> wait -> consume -> summary
+# -----------------------------
+
+dev-update: dev-update-posts dev-update-wait-posts dev-update-extract dev-update-wait dev-update-consume dev-update-summary
+	@echo "✅ dev-update DONE (prompt=$(PROMPT_VER))"
+
+dev-update-posts:
+	@echo "enqueue communities ..."
+	$(DEV) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
+
+# best-effort: ждём, что хотя бы одна community обновит last_checked_at
+dev-update-wait-posts:
+	@echo "waiting communities.last_checked_at updated (best-effort) ..."; \
+	  before=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select coalesce(max(extract(epoch from last_checked_at)),0)::bigint from communities;"`; \
+	  echo "last_checked_at_max_before=$$before"; \
+	  ok=0; \
+	  for i in $$(seq 1 $(UPDATE_ATTEMPTS)); do \
+	    cur=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select coalesce(max(extract(epoch from last_checked_at)),0)::bigint from communities;"`; \
+	    echo "last_checked_at_max_now=$$cur"; \
+	    if [ "$$cur" -gt "$$before" ]; then ok=1; break; fi; \
+	    sleep $(UPDATE_POLL_SEC); \
+	  done; \
+	  if [ "$$ok" -ne 1 ]; then echo "WARN: no last_checked_at changes detected (maybe no new posts, or job updates don't touch last_checked_at)"; fi
+
+dev-update-extract:
+	$(DEV) exec -T -e LLM_EVENTS_PROMPT_VERSION=$(PROMPT_VER) $(HZ_SVC) php artisan parser:events:extract --limit=$(EVENTS_EXTRACT_LIMIT)
+
+dev-update-wait: dev-reindex-wait
+
+# важно: строго по PROMPT_VER, без llm:consume-completed <arg>
+dev-update-consume: dev-reindex-consume
+
+dev-update-summary: dev-reindex-summary
 
 # -----------------------------
 # Infra: тэги (канон rel-<env>-YYYYMMDD-SS)
