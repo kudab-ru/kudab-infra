@@ -10,9 +10,11 @@ if [[ "$BR" != "dev" && "$BR" != "main" ]]; then
   exit 2
 fi
 
-# infra должна быть чистой
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "[err] В kudab-infra есть незакоммиченные изменения" >&2
+# infra может быть "грязной" только из-за сдвинутых SHA подмодулей (services/*)
+dirty="$(git status --porcelain)"
+if echo "$dirty" | grep -qvE '^\s*[A-Z?]{1,2}\s+services/'; then
+  echo "[err] В kudab-infra есть незакоммиченные изменения (не только services/*)" >&2
+  echo "$dirty"
   exit 2
 fi
 
