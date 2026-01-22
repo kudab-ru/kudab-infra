@@ -23,8 +23,8 @@ else
 fi
 
 INFRA_BR="$(git rev-parse --abbrev-ref HEAD)"
-TARGET_BR="${TARGET:-$INFRA_BR}"   # можно переопределить: TARGET=dev make mods-status
-FETCH="${FETCH:-0}"                # FETCH=1 make mods-status (обновит origin/*)
+TARGET_BR="${TARGET:-$INFRA_BR}"   # TARGET=dev make mods-status
+FETCH="${FETCH:-0}"                # FETCH=1 make mods-status
 
 infra_dirty="$(git status --porcelain)"
 infra_clean="✅ чисто"
@@ -32,8 +32,22 @@ if [[ -n "$infra_dirty" ]]; then
   infra_clean="⚠️ есть изменения"
 fi
 
-# список подмодулей из .gitmodules
+infra_dirty_list="$(printf '%s\n' "$infra_dirty" | awk '{print $2}' | sed '/^$/d' | head -n 20)"
+
+# 1) Пути сабмодулей как gitlink'и (истина)
 mapfile -t SUB_PATHS < <(
+  git ls-tree -r --name-only HEAD services 2>/dev/null \
+    | grep -E '^services/[^/]+$' \
+    | while read -r p; do
+        if git ls-tree -d HEAD "$p" | grep -qE '^[0-9]{6}[[:space:]]+commit[[:space:]]+'; then
+          echo "$p"
+        fi
+      done \
+    | sort
+)
+
+# 2) Пути из .gitmodules (для диагностики несостыковок)
+mapfile -t MODULES_PATHS < <(
   git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null \
     | awk '{print $2}' \
     | grep -E '^services/' \
@@ -42,7 +56,8 @@ mapfile -t SUB_PATHS < <(
 
 # Заголовок
 printf "\n%s╭──────────────────────[ 🧩 ПОДМОДУЛИ / mods-status ]──────────────────────╮%s\n" "$C_CYAN$C_BOLD" "$C_RESET"
-printf "  %sВетка infra:%s %s%s%s   |   %sСостояние:%s %s\n" "$C_BOLD" "$C_RESET" "$C_CYAN" "$INFRA_BR" "$C_RESET" "$C_BOLD" "$C_RESET" "$infra_clean"
+printf "  %sВетка infra:%s %s%s%s   |   %sСостояние:%s %s\n" \
+  "$C_BOLD" "$C_RESET" "$C_CYAN" "$INFRA_BR" "$C_RESET" "$C_BOLD" "$C_RESET" "$infra_clean"
 printf "  %sЦелевая ветка сервисов:%s %s%s%s\n" "$C_BOLD" "$C_RESET" "$C_CYAN" "$TARGET_BR" "$C_RESET"
 if [[ "$FETCH" == "1" ]]; then
   printf "  %sСеть:%s FETCH=1 (делаю git fetch origin --prune в каждом сервисе)\n" "$C_BOLD" "$C_RESET"
@@ -52,14 +67,30 @@ fi
 printf "%s╰──────────────────────────────────────────────────────────────────────────╯%s\n\n" "$C_CYAN$C_BOLD" "$C_RESET"
 
 if [[ "${#SUB_PATHS[@]}" -eq 0 ]]; then
-  echo "[warn] Не нашёл подмодулей в services/*"
+  echo "[warn] В HEAD нет gitlink-подмодулей в services/* (похоже, подмодули не добавлены в индекс)"
+  if [[ "${#MODULES_PATHS[@]}" -gt 0 ]]; then
+    echo "[hint] Но .gitmodules содержит пути. Вероятно, кто-то правил .gitmodules вручную без git submodule add."
+  fi
+
+  # infra подсказка даже в этом случае
+  if [[ -n "$infra_dirty" ]]; then
+    printf "\n%s⚠️ infra: есть незакоммиченные изменения%s\n" "$C_YELLOW$C_BOLD" "$C_RESET"
+    if [[ -n "$infra_dirty_list" ]]; then
+      printf "%sИзменены файлы (первые 20):%s\n" "$C_BOLD" "$C_RESET"
+      printf "%s\n" "$infra_dirty_list" | sed 's/^/ - /'
+    fi
+    printf "\nЧтобы продолжить:\n"
+    printf "  1) закоммитить: %sgit add -A && git commit -m \"infra: <что поменял>\" && git push%s\n" "$C_CYAN" "$C_RESET"
+    printf "  2) или откатить: %sgit restore --staged . && git restore .%s\n\n" "$C_CYAN" "$C_RESET"
+  fi
+
   exit 0
 fi
 
 # Шапка таблицы
-printf "%s%-24s %-12s %-10s %-10s %-9s %-6s %s%s\n" \
+printf "%s%-22s %-10s %-9s %-9s %-9s %-6s %s%s\n" \
   "$C_BOLD" "Сервис" "Ветка" "HEAD" "PIN" "Δ" "dirty" "статус" "$C_RESET"
-printf "%s\n" "-----------------------------------------------------------------------------------------"
+printf "%s\n" "--------------------------------------------------------------------------------------"
 
 problems=()
 warn_count=0
@@ -68,41 +99,37 @@ err_count=0
 for p in "${SUB_PATHS[@]}"; do
   svc="${p#services/}"
 
-  if [[ ! -e "$p/.git" ]]; then
-    printf "%-24s %-12s %-10s %-10s %-9s %-6s %s\n" \
-      "$svc" "—" "—" "—" "—" "—" "${C_RED}❌ не инициализирован${C_RESET}"
-    problems+=("❌ $svc: подмодуль не инициализирован (git submodule update --init --recursive)")
-    ((err_count++)) || true
-    continue
-  fi
-
   # pinned SHA в infra (gitlink)
   pin_full="$(git ls-tree -d HEAD "$p" | awk '{print $3}' || true)"
   pin_short="${pin_full:0:8}"
-  if [[ -z "$pin_full" ]]; then
-    pin_short="—"
+  [[ -z "$pin_full" ]] && pin_short="—"
+
+  # если нет на диске — это ошибка инициализации
+  if [[ ! -e "$p/.git" ]]; then
+    printf "%-22s %-10s %-9s %-9s %-9s %-6s %s\n" \
+      "$svc" "—" "—" "$pin_short" "—" "—" "${C_RED}❌ не инициализирован${C_RESET}"
+    problems+=("❌ $svc: gitlink есть (PIN=$pin_short), но подмодуль не инициализирован на диске (git submodule update --init --recursive)")
+    ((err_count++)) || true
+    continue
   fi
 
   head_full="$(git -C "$p" rev-parse HEAD 2>/dev/null || true)"
   head_short="${head_full:0:8}"
 
   branch="$(git -C "$p" symbolic-ref --short -q HEAD 2>/dev/null || true)"
-  if [[ -z "$branch" ]]; then
-    branch="DETACHED"
-  fi
+  [[ -z "$branch" ]] && branch="DETACHED"
 
   dirty_n="$(git -C "$p" status --porcelain | wc -l | tr -d ' ')"
 
-  # опционально: обновим refs
+  # FETCH=1: обновим refs (warning, если не вышло)
   if [[ "$FETCH" == "1" ]]; then
-    # короткие ретраи на сетевые глюки
     ok=0
-    for i in 1 2 3; do
+    for _ in 1 2 3; do
       if git -C "$p" fetch origin --prune >/dev/null 2>&1; then ok=1; break; fi
       sleep 1
     done
     if [[ "$ok" != "1" ]]; then
-      problems+=("⚠️ $svc: не удалось сделать fetch origin (сеть)")
+      problems+=("⚠️ $svc: не удалось сделать fetch origin (сеть/доступ), сравнение может быть неактуальным")
       ((warn_count++)) || true
     fi
   fi
@@ -122,7 +149,6 @@ for p in "${SUB_PATHS[@]}"; do
 
   status_parts=()
 
-  # проблемы/предупреждения
   if [[ "$branch" == "DETACHED" ]]; then
     status_parts+=("${C_YELLOW}⚠️ detached${C_RESET}")
     problems+=("⚠️ $svc: DETACHED (обычно лечится make mods-update)")
@@ -141,7 +167,6 @@ for p in "${SUB_PATHS[@]}"; do
     ((warn_count++)) || true
   fi
 
-  # behind — это реально риск: ты локально отстаёшь от origin/ветки
   if [[ "$delta" =~ ^↓([0-9]+)\ ↑([0-9]+)$ ]]; then
     b="${BASH_REMATCH[1]}"
     a="${BASH_REMATCH[2]}"
@@ -162,23 +187,70 @@ for p in "${SUB_PATHS[@]}"; do
 
   status_str="$(IFS=', '; echo "${status_parts[*]}")"
 
-  printf "%-24s %-12s %-10s %-10s %-9s %-6s %s\n" \
+  printf "%-22s %-10s %-9s %-9s %-9s %-6s %s\n" \
     "$svc" "$branch" "$head_short" "$pin_short" "$delta" "$dirty_n" "$status_str"
+done
+
+# Несостыковки: .gitmodules содержит пути, но в индексе нет gitlink'ов
+extras=()
+for mp in "${MODULES_PATHS[@]}"; do
+  found=0
+  for sp in "${SUB_PATHS[@]}"; do
+    [[ "$mp" == "$sp" ]] && found=1 && break
+  done
+  if [[ "$found" != "1" ]]; then
+    extras+=("$mp")
+  fi
 done
 
 printf "\n"
 
-# Итоги
-if [[ "$err_count" -eq 0 && "$warn_count" -eq 0 ]]; then
+if [[ "${#extras[@]}" -gt 0 ]]; then
+  printf "%s⚠️ Несостыковка:%s пути есть в .gitmodules, но не добавлены как подмодули (gitlink отсутствует):\n" "$C_YELLOW$C_BOLD" "$C_RESET"
+  for e in "${extras[@]}"; do
+    printf " - %s\n" "$e"
+  done
+  printf "  %sПодсказка:%s добавь через git submodule add ... (а не ручной правкой .gitmodules)\n\n" "$C_BOLD" "$C_RESET"
+  ((warn_count++)) || true
+fi
+
+# Итоги: "всё ровно" только если и сабмодули ок, и infra чистая
+if [[ "$err_count" -eq 0 && "$warn_count" -eq 0 && -z "$infra_dirty" ]]; then
   printf "%s✅ Всё ровно.%s\n" "$C_GREEN$C_BOLD" "$C_RESET"
 else
   printf "%sИтог:%s " "$C_BOLD" "$C_RESET"
   [[ "$err_count" -gt 0 ]] && printf "%s❌ ошибок: %d%s  " "$C_RED$C_BOLD" "$err_count" "$C_RESET"
   [[ "$warn_count" -gt 0 ]] && printf "%s⚠️ предупреждений: %d%s" "$C_YELLOW$C_BOLD" "$warn_count" "$C_RESET"
-  printf "\n\n%sПроблемы:%s\n" "$C_BOLD" "$C_RESET"
-  for m in "${problems[@]}"; do
-    printf " - %s\n" "$m"
-  done
+  [[ -n "$infra_dirty" ]] && printf "%s⚠️ infra: есть изменения%s" "$C_YELLOW$C_BOLD" "$C_RESET"
+  printf "\n"
+
+  if [[ "${#problems[@]}" -gt 0 ]]; then
+    printf "\n%sПроблемы:%s\n" "$C_BOLD" "$C_RESET"
+    for m in "${problems[@]}"; do
+      printf " - %s\n" "$m"
+    done
+  fi
+fi
+
+# infra: подсказка что делать, если есть изменения
+if [[ -n "$infra_dirty" ]]; then
+  printf "\n%s⚠️ infra: есть незакоммиченные изменения%s\n" "$C_YELLOW$C_BOLD" "$C_RESET"
+  if [[ -n "$infra_dirty_list" ]]; then
+    printf "%sИзменены файлы (первые 20):%s\n" "$C_BOLD" "$C_RESET"
+    printf "%s\n" "$infra_dirty_list" | sed 's/^/ - /'
+  fi
+
+  if printf '%s\n' "$infra_dirty" | grep -qvE '^[[:space:]]*[A-Z?]{1,2}[[:space:]]+services/'; then
+    printf "\n%sЭто не только обновление ссылок подмодулей.%s\n" "$C_BOLD" "$C_RESET"
+    printf "Чтобы продолжить mods-update:\n"
+    printf "  1) %sgit add -A && git commit -m \"infra: <что поменял>\" && git push%s\n" "$C_CYAN" "$C_RESET"
+    printf "  2) или откатить: %sgit restore --staged . && git restore .%s\n" "$C_CYAN" "$C_RESET"
+  else
+    printf "\n%sПохоже, это только сдвиг ссылок services/*. %s\n" "$C_BOLD" "$C_RESET"
+    printf "Можно зафиксировать:\n"
+    printf "  %sgit add services && git commit -m \"infra: обновить ссылки подмодулей (%s)\" && git push%s\n" "$C_CYAN" "$TARGET_BR" "$C_RESET"
+  fi
+  printf "\n"
 fi
 
 printf "\n%sПодсказки:%s\n" "$C_BOLD" "$C_RESET"
