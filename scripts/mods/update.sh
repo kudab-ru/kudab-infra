@@ -28,12 +28,12 @@ git submodule update --init --recursive
 
 echo "== Подмодули: обновление до origin/$BR (ff-only) =="
 
-git submodule foreach --recursive bash -lc '
-  set -euo pipefail
+git submodule foreach --recursive '
+  set -eu
   BR="'"$BR"'"
 
   if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "[err] Грязный подмодуль: $name ($path)" >&2
+    echo "[err] Грязный подмодуль: ${name:-?} (${path:-?})" >&2
     exit 2
   fi
 
@@ -46,7 +46,7 @@ git submodule foreach --recursive bash -lc '
   fi
 
   git pull --ff-only origin "$BR" >/dev/null
-  echo "[ok] $name -> $BR @ $(git rev-parse --short HEAD)"
+  echo "[ok] ${name:-?} -> $BR @ $(git rev-parse --short HEAD)"
 '
 
 echo "== infra: фиксация SHA подмодулей =="
