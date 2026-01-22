@@ -42,6 +42,7 @@ UPDATE_ATTEMPTS       ?= 20    # best-effort wait ~40s
 .PHONY: snapshot-api snapshot-parser
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
 .PHONY: mods-status mods-sync-dev
+.PHONY: mods-update mods-promote
 .PHONY: superadmin
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
 .PHONY: dev-smoke-post dev-post
@@ -79,6 +80,8 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-move"      "🎯  Переместить существующий тэг на REF (TAG=..., REF=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулям"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-update"   "🔗  Обновить ссылки подмодулей под текущую ветку (dev/main)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-promote"  "🚚  Dev → Main во всех сервисах (ff-only) + обновить infra/main"
 	@printf "\n"
 
 init:
@@ -495,6 +498,12 @@ submodules-fix-head:
 # -----------------------------
 # Подмодули: диагностика / синк
 # -----------------------------
+
+mods-update:
+	@bash scripts/mods/update.sh
+
+mods-promote:
+	@bash scripts/mods/promote.sh
 
 mods-status:
 	@git submodule foreach --recursive '\

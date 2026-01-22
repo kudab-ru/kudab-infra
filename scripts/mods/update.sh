@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.."; pwd)"
+cd "$ROOT"
+
+BR="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$BR" != "dev" && "$BR" != "main" ]]; then
+  echo "[err] Переключись на ветку dev или main в kudab-infra (сейчас: $BR)" >&2
+  exit 2
+fi
+
+# infra должна быть чистой
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "[err] В kudab-infra есть незакоммиченные изменения" >&2
+  exit 2
+fi
+
+git submodule update --init --recursive
+
+echo "== Подмодули: обновление до origin/$BR (ff-only) =="
+
+git submodule foreach --recursive bash -lc '
+  set -euo pipefail
+  BR="'"$BR"'"
+
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "[err] Грязный подмодуль: $name ($path)" >&2
+    exit 2
+  fi
+
+  git fetch origin --prune
+
+  if git show-ref --verify --quiet "refs/heads/$BR"; then
+    git switch "$BR" >/dev/null
+  else
+    git switch -c "$BR" "origin/$BR" >/dev/null
+  fi
+
+  git pull --ff-only origin "$BR" >/dev/null
+  echo "[ok] $name -> $BR @ $(git rev-parse --short HEAD)"
+'
+
+echo "== infra: фиксация SHA подмодулей =="
+git add services || true
+
+if git diff --cached --quiet; then
+  echo "[ok] Ссылки не изменились"
+  exit 0
+fi
+
+git commit -m "infra: обновить ссылки подмодулей ($BR)"
+git push
+echo "[ok] Готово"
