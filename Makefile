@@ -456,16 +456,7 @@ submodules-fix-head:
 # -----------------------------
 
 mods-status:
-	@git submodule foreach --recursive '\
-	  echo "== $$path =="; \
-	  git fetch --all --tags >/dev/null 2>&1; \
-	  echo -n "branch: "; git rev-parse --abbrev-ref HEAD; \
-	  if git show-ref --quiet refs/remotes/origin/dev; then \
-	    echo -n "ahead/behind vs origin/dev:  "; git rev-list --left-right --count origin/dev...HEAD; \
-	  else echo "no origin/dev"; fi; \
-	  if git show-ref --quiet refs/remotes/origin/main; then \
-	    echo -n "main..dev: "; git rev-list --left-right --count origin/main...dev 2>/dev/null || echo "n/a"; \
-	  fi; echo;'
+	@bash scripts/mods/status.sh
 
 mods-sync-dev:
 	@git submodule foreach --recursive '\
