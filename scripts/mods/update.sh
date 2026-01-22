@@ -12,11 +12,17 @@ fi
 
 # infra может быть "грязной" только из-за сдвинутых SHA подмодулей (services/*)
 dirty="$(git status --porcelain)"
-if echo "$dirty" | grep -qvE '^\s*[A-Z?]{1,2}\s+services/'; then
-  echo "[err] В kudab-infra есть незакоммиченные изменения (не только services/*)" >&2
-  echo "$dirty"
-  exit 2
+
+# Если вообще чисто — ок, пропускаем
+if [[ -n "$dirty" ]]; then
+  # Разрешаем изменения ТОЛЬКО вида "M services/..."
+  if printf '%s\n' "$dirty" | grep -qvE '^[[:space:]]*[A-Z?]{1,2}[[:space:]]+services/'; then
+    echo "[err] В kudab-infra есть незакоммиченные изменения (не только services/*)" >&2
+    printf '%s\n' "$dirty"
+    exit 2
+  fi
 fi
+
 
 git submodule update --init --recursive
 
