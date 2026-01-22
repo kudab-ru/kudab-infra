@@ -464,3 +464,17 @@ mods-sync-dev:
 	  if git show-ref --verify --quiet refs/heads/dev; then git switch dev; else git switch -c dev origin/main; fi; \
 	  git merge --ff-only origin/main || git reset --hard origin/main; \
 	  git push -u origin dev || git push --force-with-lease origin dev;'
+
+# -----------------------------
+# Подмодули: статус / обновление / промоут
+# -----------------------------
+.PHONY: mods-status mods-update mods-promote
+
+mods-status:
+	@TARGET="$${TARGET:-$$(git rev-parse --abbrev-ref HEAD)}" FETCH="$${FETCH:-0}" bash scripts/mods/status.sh
+
+mods-update:
+	@TARGET="$${TARGET:-$$(git rev-parse --abbrev-ref HEAD)}" bash scripts/mods/update.sh
+
+mods-promote:
+	@bash scripts/mods/promote.sh
