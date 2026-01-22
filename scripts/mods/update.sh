@@ -15,7 +15,7 @@ if [[ "$INFRA_BR" != "dev" && "$INFRA_BR" != "main" ]]; then
   exit 2
 fi
 
-TARGET="${TARGET:-$INFRA_BR}"   # можно переопределить: TARGET=dev|main make mods-update
+TARGET="${TARGET:-$INFRA_BR}"   # TARGET=dev|main make mods-update
 VERBOSE="${VERBOSE:-0}"         # VERBOSE=1 make mods-update
 
 if [[ "$TARGET" != "dev" && "$TARGET" != "main" ]]; then
@@ -23,7 +23,7 @@ if [[ "$TARGET" != "dev" && "$TARGET" != "main" ]]; then
   exit 2
 fi
 
-# Если infra "грязная" — допускаем только сдвиг gitlink в services/*
+# infra может быть "грязной" только из-за сдвинутых SHA подмодулей (services/*)
 dirty="$(git status --porcelain)"
 if [[ -n "$dirty" ]]; then
   if printf '%s\n' "$dirty" | grep -qvE '^[[:space:]]*[A-Z?]{1,2}[[:space:]]+services/'; then
@@ -31,100 +31,111 @@ if [[ -n "$dirty" ]]; then
     echo "$dirty" >&2
     echo >&2
     echo "Чтобы продолжить:" >&2
-    echo "  1) git add -A && git commit -m \"infra: <что поменял>\" && git push" >&2
+    echo '  1) git add -A && git commit -m "infra: <что поменял>" && git push' >&2
     echo "  2) или откатить: git restore --staged . && git restore ." >&2
     exit 2
   fi
-
-  echo "[warn] В infra есть изменения (только services/*). Продолжаю — в конце зафиксирую gitlink-и, если они поменяются."
+  echo "[warn] В infra есть изменения (только services/*). В конце зафиксирую gitlink-и, если они поменяются."
 fi
-
-# Ужесточаем SSH, чтобы не зависать и жить при дрожащей сети
-: "${GIT_SSH_COMMAND:=ssh -o ConnectTimeout=10 -o ConnectionAttempts=3 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes}"
-export GIT_SSH_COMMAND
-export GIT_TERMINAL_PROMPT=0
 
 # Подготовим подмодули (может временно поставить на pinned SHA — это нормально)
 git submodule update --init --recursive
 
+# Ужесточаем SSH, чтобы не зависать и чуть лучше жить при дрожащей сети
+: "${GIT_SSH_COMMAND:=ssh -o ConnectTimeout=10 -o ConnectionAttempts=3 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o TCPKeepAlive=yes}"
+export GIT_SSH_COMMAND
+export GIT_TERMINAL_PROMPT=0
+
+retry_quiet() {
+  local max="${1:-5}"
+  local sleep_s="${2:-2}"
+  shift 2
+
+  local tmp rc i
+  tmp="$(mktemp)"
+  i=1
+
+  while [[ "$i" -le "$max" ]]; do
+    : >"$tmp"
+    if "$@" >/dev/null 2>"$tmp"; then
+      rm -f "$tmp"
+      return 0
+    fi
+    rc=$?
+
+    if [[ "$VERBOSE" == "1" ]]; then
+      echo "[dbg] попытка $i/$max (rc=$rc): $*" >&2
+      sed -n '1,20p' "$tmp" >&2 || true
+    fi
+
+    if [[ "$i" -eq "$max" ]]; then
+      echo "[err] не удалось выполнить после $max попыток: $*" >&2
+      sed -n '1,120p' "$tmp" >&2 || true
+      rm -f "$tmp"
+      return "$rc"
+    fi
+
+    i=$((i+1))
+    sleep "$sleep_s"
+  done
+
+  rm -f "$tmp"
+  return 1
+}
+
+# список подмодулей из .gitmodules
+mapfile -t SUB_PATHS < <(
+  git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null \
+    | awk '{print $2}' \
+    | grep -E '^services/' \
+    | sort
+)
+
+if [[ "${#SUB_PATHS[@]}" -eq 0 ]]; then
+  echo "[warn] Не нашёл подмодулей в services/*"
+  exit 0
+fi
+
 echo "== Подмодули: обновление до origin/$TARGET (ff-only) =="
 
-git submodule foreach --recursive '
-  set -euo pipefail
+for p in "${SUB_PATHS[@]}"; do
+  svc="${p#services/}"
 
-  BR="'"$TARGET"'"
-  VERBOSE="'"$VERBOSE"'"
-
-  svc="${name:-}"
-  pth="${path:-}"
-  if [[ -z "$svc" ]]; then
-    if [[ -n "$pth" ]]; then svc="${pth##*/}"; else svc="unknown"; fi
+  # если подмодуль есть в .gitmodules, но не инициализирован на диске
+  if [[ ! -e "$p/.git" ]]; then
+    echo "[warn] $svc: не инициализирован — пробую init"
+    git submodule update --init --recursive "$p"
   fi
 
-  retry_quiet() {
-    local max="${1:-5}"
-    local sleep_s="${2:-2}"
-    shift 2
-
-    local tmp rc i
-    tmp="$(mktemp)"
-
-    i=1
-    while [[ "$i" -le "$max" ]]; do
-      : >"$tmp"
-      if "$@" >/dev/null 2>"$tmp"; then
-        rm -f "$tmp"
-        return 0
-      fi
-      rc=$?
-
-      if [[ "$VERBOSE" == "1" ]]; then
-        echo "[dbg] $svc: попытка $i/$max провалилась (rc=$rc): $*" >&2
-        sed -n "1,5p" "$tmp" >&2 || true
-      fi
-
-      if [[ "$i" -eq "$max" ]]; then
-        echo "[err] $svc: не удалось выполнить после $max попыток: $*" >&2
-        sed -n "1,120p" "$tmp" >&2 || true
-        rm -f "$tmp"
-        return "$rc"
-      fi
-
-      i=$((i+1))
-      sleep "$sleep_s"
-    done
-
-    rm -f "$tmp"
-    return 1
-  }
-
-  # Чистота подмодуля
-  if [[ -n "$(git status --porcelain)" ]]; then
-    echo "[err] Грязный подмодуль: $svc (${pth:-?})" >&2
-    git status --porcelain | sed -n "1,40p" >&2
+  if [[ ! -e "$p/.git" ]]; then
+    echo "[err] $svc: подмодуль не инициализирован (нет $p/.git)" >&2
     exit 2
   fi
 
-  # Обновим origin/*
-  retry_quiet 5 2 git fetch origin --prune
-
-  # Переходим на ветку
-  if git show-ref --verify --quiet "refs/heads/$BR"; then
-    git switch "$BR" >/dev/null
-  else
-    if git show-ref --verify --quiet "refs/remotes/origin/$BR"; then
-      git switch -c "$BR" "origin/$BR" >/dev/null
-    else
-      echo "[err] $svc: нет origin/$BR (ветка отсутствует на remote?)" >&2
-      exit 2
-    fi
+  # Чистота подмодуля
+  if [[ -n "$(git -C "$p" status --porcelain)" ]]; then
+    echo "[err] Грязный подмодуль: $svc ($p)" >&2
+    git -C "$p" status --porcelain | sed -n '1,60p' >&2
+    exit 2
   fi
 
-  # Подтянуть ff-only
-  retry_quiet 5 2 git pull --ff-only origin "$BR"
+  retry_quiet 5 2 git -C "$p" fetch origin --prune
 
-  echo "[ok] $svc -> $BR @ $(git rev-parse --short HEAD)"
-'
+  if ! git -C "$p" show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+    echo "[err] $svc: нет origin/$TARGET (ветка отсутствует на remote?)" >&2
+    exit 2
+  fi
+
+  if git -C "$p" show-ref --verify --quiet "refs/heads/$TARGET"; then
+    git -C "$p" switch "$TARGET" >/dev/null
+  else
+    git -C "$p" switch -c "$TARGET" "origin/$TARGET" >/dev/null
+  fi
+
+  retry_quiet 5 2 git -C "$p" pull --ff-only origin "$TARGET"
+
+  echo "[ok] services/$svc -> $TARGET @ $(git -C "$p" rev-parse --short HEAD)"
+done
 
 echo "== infra: фиксация SHA подмодулей =="
 
