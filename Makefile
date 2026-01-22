@@ -1,4 +1,4 @@
-# Makefile для kudasobrat.ru (v1.1.2 + reindex fixes)
+# Makefile для kudasobrat.ru (v1.1.3)
 
 COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml
@@ -37,12 +37,13 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
-.PHONY: mods-status mods-sync-dev
+.PHONY: mods-status mods-sync-dev mods-update mods-promote
 .PHONY: superadmin
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
 .PHONY: dev-smoke-post dev-post
 .PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
 .PHONY: dev-test
+.PHONY: prod-pull prod-deploy prod-deploy-service
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -56,6 +57,9 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-reindex"   "🔁  DEV полный прогон (reset+posts+verify+events_extract+wait)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-pull"     "⬇️  PROD: стянуть актуальный infra+подмодули (git fetch/reset + submodule update)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy"   "🚀  PROD: prod-pull + up -d --build --remove-orphans"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy-service" "🚀  PROD: prod-pull + rebuild/recreate одного сервиса (SVC=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rebuild"       "🔁  Пересборка всех сервисов (no-cache)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "down"          "🛑  Остановить и удалить все контейнеры"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "logs"          "📜  Хвост логов всех сервисов (tail -f)"
@@ -86,6 +90,32 @@ prod:
 
 prod-service:
 	@test -n "$(SVC)" || (echo "SVC is required: make prod-service SVC=<service-name>"; exit 1)
+	$(PROD) up -d --no-deps --build $(SVC)
+
+# -----------------------------
+# PROD: pull latest infra + submodules (safe for pinned submodules)
+# Примечание: DETACHED в подмодулях на проде — норма, если infra пинит SHA.
+# -----------------------------
+
+prod-pull:
+	@set -e; \
+	echo "== git: update infra repo =="; \
+	git config --local fetch.recurseSubmodules false; \
+	git config --local submodule.recurse false; \
+	git fetch origin --prune; \
+	git switch main; \
+	git reset --hard origin/main; \
+	echo "== git: sync/update submodules =="; \
+	git submodule sync --recursive; \
+	git submodule update --init --recursive; \
+	echo "✅ prod-pull DONE"; \
+	$(MAKE) mods-status || true
+
+prod-deploy: prod-pull
+	$(PROD) up -d --build --remove-orphans
+
+prod-deploy-service: prod-pull
+	@test -n "$(SVC)" || (echo "SVC is required: make prod-deploy-service SVC=<service-name>"; exit 1)
 	$(PROD) up -d --no-deps --build $(SVC)
 
 rebuild:
@@ -463,3 +493,6 @@ mods-update:
 
 mods-promote:
 	@bash scripts/mods/promote.sh
+
+mods-sync-dev:
+	@TARGET="dev" bash scripts/mods/update.sh
