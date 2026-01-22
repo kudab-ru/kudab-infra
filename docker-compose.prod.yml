@@ -49,6 +49,14 @@ services:
       - kudab-db
       - redis
 
+  # PHP-FPM парсера (в docker-compose.yml он объявлен без build, из-за этого compose пытается pull'ить образ на сервере)
+  # В prod-оверрайте добавляем build, чтобы образ гарантированно собирался локально.
+  kudab-parser-fpm:
+    image: ${PARSER_IMAGE:-kudab-parser}
+    build:
+      context: ./services/kudab-parser
+      dockerfile: Dockerfile
+
   # Horizon (воркеры очередей парсера)
   kudab-horizon:
     image: ${PARSER_IMAGE:-kudab-parser}
@@ -159,4 +167,3 @@ services:
 
 volumes:
   pgdata:
-
