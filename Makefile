@@ -37,7 +37,7 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
-.PHONY: mods-status mods-sync-dev mods-update mods-promote
+.PHONY: mods-status mods-sync-dev mods-update mods-promote mods-backport
 .PHONY: superadmin
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
 .PHONY: dev-smoke-post dev-post
@@ -76,6 +76,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-retag"     "🔁  Перетегировать старый тэг в канон (SRC=..., ENV=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "tag-move"      "🎯  Переместить существующий тэг на REF (TAG=..., REF=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-backport" "🧯  Main → Dev во всех сервисах (ff-only) + обновить infra/dev"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулям"
 	@printf "\n"
 
@@ -493,6 +494,9 @@ mods-update:
 
 mods-promote:
 	@bash scripts/mods/promote.sh
+
+mods-backport:
+	@bash scripts/mods/backport.sh
 
 mods-sync-dev:
 	@TARGET="dev" bash scripts/mods/update.sh
