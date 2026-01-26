@@ -32,6 +32,15 @@ SMOKE_POSTS_ATTEMPTS  ?= 60
 SMOKE_LLM_ATTEMPTS    ?= 120   # 240s
 SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов под bench
 
+# -----------------------------
+# REINDEX: универсальный прогон через scripts/dev/reindex.sh
+# (явно прокидываем env, иначе скрипт возьмёт дефолты)
+# -----------------------------
+
+REINDEX_VERIFY_LIMIT         ?= 20
+REINDEX_EVENTS_EXTRACT_LIMIT ?= 2000
+REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
@@ -41,7 +50,6 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: superadmin
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
 .PHONY: dev-smoke-post dev-post
-.PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
 .PHONY: reindex reindex-prod
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
@@ -55,7 +63,8 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev"           "🧪  Запуск DEV окружения (hot-reload, маунты)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke"     "🧪  DEV smoke (reset+wait-horizon+seed+posts+llm+report)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-smoke-post" "🧪  DEV smoke по одному существующему посту (POST_ID=...)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-reindex"   "🔁  DEV полный прогон (reset+posts+verify+events_extract+wait)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "reindex"       "🔁  REINDEX в DEV (reset/seed/enqueue/verify/assert/extract/wait/consume)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "reindex-prod"  "🔁  REINDEX в PROD (safe: без reset/seed/enqueue/verify/assert, consume не sync)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-pull"     "⬇️  PROD: стянуть актуальный infra+подмодули (git fetch/reset + submodule update)"
@@ -351,95 +360,53 @@ dev-smoke-post:
 dev-post: dev-smoke-post
 
 # -----------------------------
+# REINDEX (универсальный, красивый вывод)
+# -----------------------------
+
+reindex:
+	@set -e; \
+	echo ""; \
+	printf "\033[1;34m╭──────────────────────[ 🔁 REINDEX ]──────────────────────╮\033[0m\n"; \
+	printf "  STACK: dev | DC: DEV | PROMPT_VER: %s\n" "$(PROMPT_VER)"; \
+	printf "  limits: POSTS_MIN=%s VERIFY_LIMIT=%s EXTRACT_LIMIT=%s\n" "$(REINDEX_POSTS_MIN)" "$(REINDEX_VERIFY_LIMIT)" "$(REINDEX_EVENTS_EXTRACT_LIMIT)"; \
+	printf "\033[1;34m╰──────────────────────────────────────────────────────────╯\033[0m\n"; \
+	STACK=dev \
+	DC='$(DEV)' \
+	PROMPT_VER='$(PROMPT_VER)' \
+	VERIFY_LIMIT='$(REINDEX_VERIFY_LIMIT)' \
+	EVENTS_EXTRACT_LIMIT='$(REINDEX_EVENTS_EXTRACT_LIMIT)' \
+	POSTS_MIN='$(REINDEX_POSTS_MIN)' \
+	bash scripts/dev/reindex.sh
+
+# Прод: безопасный режим (без reset/seed/enqueue/verify/assert; consume в очередь, не sync)
+# Прод: безопасный режим по умолчанию, но флаги можно переопределять:
+# make reindex-prod CONFIRM_PROD=1 SEED=1 ENQUEUE=1
+reindex-prod:
+	@set -e; \
+	echo ""; \
+	printf "\033[1;34m╭──────────────────────[ 🔁 REINDEX ]──────────────────────╮\033[0m\n"; \
+	printf "  STACK: prod | DC: PROD | PROMPT_VER: %s\n" "$(PROMPT_VER)"; \
+	printf "  safe defaults: RESET=0 SEED=0 ENQUEUE=0 VERIFY=0 ASSERTS=0 CONSUME_SYNC=0\n"; \
+	printf "  limits: POSTS_MIN=%s VERIFY_LIMIT=%s EXTRACT_LIMIT=%s\n" "$(REINDEX_POSTS_MIN)" "$(REINDEX_VERIFY_LIMIT)" "$(REINDEX_EVENTS_EXTRACT_LIMIT)"; \
+	printf "\033[1;34m╰──────────────────────────────────────────────────────────╯\033[0m\n"; \
+	STACK=prod \
+	DC='$(PROD)' \
+	PROMPT_VER='$(PROMPT_VER)' \
+	VERIFY_LIMIT='$(REINDEX_VERIFY_LIMIT)' \
+	EVENTS_EXTRACT_LIMIT='$(REINDEX_EVENTS_EXTRACT_LIMIT)' \
+	POSTS_MIN='$(REINDEX_POSTS_MIN)' \
+	RESET=$${RESET:-0} SEED=$${SEED:-0} ENQUEUE=$${ENQUEUE:-0} VERIFY=$${VERIFY:-0} ASSERTS=$${ASSERTS:-0} CONSUME_SYNC=$${CONSUME_SYNC:-0} \
+	bash scripts/dev/reindex.sh
+
+# -----------------------------
 # Full pipeline: communities -> posts -> verify -> events_extract
 # -----------------------------
 
-VERIFY_LIMIT         ?= 20
-EVENTS_EXTRACT_LIMIT ?= 2000
-
-VERIFY_RETRY         ?= 3
-VERIFY_RETRY_SLEEP   ?= 2
-VERIFY_STRICT        ?= 1   # 1 = упасть в конце, если были ошибки; 0 = только warn
-
-# Тест через твой скрипт (scripts/dev/reindex.sh)
 dev-test:
 	@test -f scripts/dev/reindex.sh || (echo "ERROR: scripts/dev/reindex.sh not found"; exit 2)
 	@chmod +x scripts/dev/reindex.sh
-	PROMPT_VER=$(PROMPT_VER) VERIFY_LIMIT=$(VERIFY_LIMIT) EVENTS_EXTRACT_LIMIT=$(EVENTS_EXTRACT_LIMIT) POSTS_MIN=$(SMOKE_POSTS_MIN) \
+	PROMPT_VER=$(PROMPT_VER) VERIFY_LIMIT=$(REINDEX_VERIFY_LIMIT) EVENTS_EXTRACT_LIMIT=$(REINDEX_EVENTS_EXTRACT_LIMIT) POSTS_MIN=$(REINDEX_POSTS_MIN) \
 	  bash scripts/dev/reindex.sh
-
-dev-reindex: dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
-	@echo "✅ dev-reindex DONE (prompt=$(PROMPT_VER))"
-
-dev-reindex-verify:
-	@echo "verifying communities (limit=$(VERIFY_LIMIT), retry=$(VERIFY_RETRY)) ..."; \
-	  ids=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select id from communities order by id;"`; \
-	  failed=""; \
-	  c=0; \
-	  for cid in $$ids; do \
-	    c=$$((c+1)); \
-	    echo "[$$c] verify community_id=$$cid"; \
-	    ok=0; \
-	    for a in $$(seq 1 $(VERIFY_RETRY)); do \
-	      echo "  attempt $$a/$(VERIFY_RETRY) ..."; \
-	      if $(DEV) exec -T $(HZ_SVC) php artisan parser:verify:community:verify-locate $$cid --limit=$(VERIFY_LIMIT) --save --overwrite --clear-on-aggregator; then \
-	        ok=1; break; \
-	      fi; \
-	      sleep $(VERIFY_RETRY_SLEEP); \
-	    done; \
-	    if [ $$ok -ne 1 ]; then \
-	      echo "❌ verify failed for community_id=$$cid (after $(VERIFY_RETRY) attempts)"; \
-	      failed="$$failed $$cid"; \
-	    fi; \
-	  done; \
-	  echo "verify done: $$c communities"; \
-	  $(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -c "select verification_status, count(*) from communities group by verification_status order by verification_status;"; \
-	  if [ -n "$$failed" ]; then \
-	    echo "FAILED community_ids:$$failed"; \
-	    if [ "$(VERIFY_STRICT)" = "1" ]; then exit 2; fi; \
-	  fi
-
-dev-reindex-extract:
-	$(DEV) exec -T -e LLM_EVENTS_PROMPT_VERSION=$(PROMPT_VER) $(HZ_SVC) php artisan parser:events:extract --limit=$(EVENTS_EXTRACT_LIMIT)
-
-dev-reindex-wait:
-	@echo "waiting llm_jobs finished (task=events_extract, version=$(PROMPT_VER)) ..."; \
-	  for i in $$(seq 1 $(SMOKE_LLM_ATTEMPTS)); do \
-	    total=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)';"`; \
-	    pend=`$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select count(*) from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' and status in ('pending','processing');"`; \
-	    echo "llm_jobs total=$$total pending_or_processing=$$pend"; \
-	    test "$$total" -gt 0 -a "$$pend" -eq 0 && exit 0; \
-	    sleep $(SMOKE_POLL_SEC); \
-	  done; \
-	  echo "❌ ERROR: llm_jobs not finished in time"; \
-	  $(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -c "select id, context_post_id, status, attempt, retry_at, updated_at from llm_jobs where task='events_extract' and prompt_version='$(PROMPT_VER)' order by id desc limit 20;"; \
-	  exit 2
-
-dev-reindex-consume:
-	@echo "consuming completed llm_jobs -> events (version=$(PROMPT_VER)) ..."
-	$(DEV) exec -T -e LLM_EVENTS_PROMPT_VERSION=$(PROMPT_VER) $(HZ_SVC) php -r 'require "vendor/autoload.php"; $$app = require "bootstrap/app.php"; $$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $$v = getenv("LLM_EVENTS_PROMPT_VERSION") ?: "v1"; $$ids = Illuminate\Support\Facades\DB::table("llm_jobs as lj")->leftJoin("events as e", function($$j){ $$j->on("e.original_post_id","=","lj.context_post_id"); $$j->whereNull("e.deleted_at"); })->where("lj.task","events_extract")->where("lj.prompt_version",$$v)->where("lj.status","completed")->whereNull("e.id")->orderBy("lj.id")->pluck("lj.id")->all(); foreach($$ids as $$id){ Illuminate\Support\Facades\Bus::dispatchSync(new App\Jobs\ConsumeLlmEventsJob((int)$$id,false)); echo "OK consumed {$$id}\n"; } echo "DONE consume version={$$v} ids=".count($$ids)."\n";'
-
-dev-reindex-summary:
-	@echo "== SUMMARY (prompt=$(PROMPT_VER)) =="
-	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
-select prompt_version, status, count(*) cnt \
-from llm_jobs where task='events_extract' \
-group by 1,2 order by 1,2;"
-	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
-select status, count(*) cnt \
-from context_posts \
-group by 1 order by 1;"
-	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
-select count(*) as events_total \
-from events where deleted_at is null;"
-
-reindex:
-	@DC='$(DEV)' STACK=dev bash scripts/dev/reindex.sh
-
-# Прод: безопасный режим (без reset/seed/enqueue/verify/assert; consume в очередь, не sync)
-reindex-prod:
-	@DC='$(PROD)' STACK=prod RESET=0 SEED=0 ENQUEUE=0 VERIFY=0 ASSERTS=0 CONSUME_SYNC=0 bash scripts/dev/reindex.sh
-
 
 # -----------------------------
 # Infra: тэги (канон rel-<env>-YYYYMMDD-SS)

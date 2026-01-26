@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 # ------------------------------------------------------------
 # Universal reindex script for dev/prod
@@ -18,12 +18,44 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.."; pwd)"
 cd "$ROOT"
 
-STACK="${STACK:-dev}" # dev|prod
+# -----------------------------
+# pretty output
+# -----------------------------
+NO_COLOR="${NO_COLOR:-0}"
 
-if [[ "$STACK" != "dev" && "$STACK" != "prod" ]]; then
-  echo "[err] STACK must be dev|prod (got: $STACK)" >&2
-  exit 2
+if [[ "$NO_COLOR" == "1" ]]; then
+  C_BLUE=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_DIM=""; C_RESET=""
+else
+  C_BLUE=$'\033[1;34m'
+  C_GREEN=$'\033[1;32m'
+  C_YELLOW=$'\033[1;33m'
+  C_RED=$'\033[1;31m'
+  C_DIM=$'\033[90m'
+  C_RESET=$'\033[0m'
 fi
+
+ts() { date +"%H:%M:%S"; }
+log()  { echo "${C_DIM}[$(ts)]${C_RESET} $*"; }
+ok()   { echo "${C_GREEN}✅${C_RESET} $*"; }
+warn() { echo "${C_YELLOW}⚠️${C_RESET} $*" >&2; }
+die()  { echo "${C_RED}❌${C_RESET} $*" >&2; exit 2; }
+
+on_err() {
+  local code=$?
+  warn "script failed (exit=$code) at line=${BASH_LINENO[0]} cmd: ${BASH_COMMAND}"
+  exit "$code"
+}
+trap on_err ERR
+
+is_true() {
+  [[ "${1:-0}" == "1" || "${1:-}" == "true" || "${1:-}" == "yes" ]]
+}
+
+# -----------------------------
+# stack + compose
+# -----------------------------
+STACK="${STACK:-dev}" # dev|prod
+[[ "$STACK" == "dev" || "$STACK" == "prod" ]] || die "STACK must be dev|prod (got: $STACK)"
 
 # Compose command (can be overridden from Makefile by passing DC="docker compose ...")
 DC_STR="${DC:-}"
@@ -35,12 +67,36 @@ if [[ -z "$DC_STR" ]]; then
   fi
 fi
 
-# Parse DC_STR into array safely
+# Parse DC_STR into array (OK for our simple tokens like: docker compose -f a -f b)
 read -r -a DC_ARR <<<"$DC_STR"
 dc() { "${DC_ARR[@]}" "$@"; }
 
+# -----------------------------
+# services (can be overridden)
+# -----------------------------
+HZ_SVC="${HZ_SVC:-kudab-horizon}"
+API_SVC="${API_SVC:-kudab-api}"
+DB_SVC="${DB_SVC:-kudab-db}"
+PARSER_SVC="${PARSER_SVC:-}" # will autodetect if empty
+
+# -----------------------------
+# read prompt ver from .env if not set
+# -----------------------------
+read_env_prompt_ver() {
+  local v=""
+  if [[ -f ".env" ]]; then
+    v="$(sed -n 's/^LLM_EVENTS_PROMPT_VERSION=//p' .env 2>/dev/null | head -n 1 | tr -d '\r' | tr -d '"' | tr -d "'")"
+  fi
+  echo "$v"
+}
+
+PROMPT_VER="${PROMPT_VER:-}"
+if [[ -z "$PROMPT_VER" ]]; then
+  ENV_PROMPT_VER="$(read_env_prompt_ver)"
+  PROMPT_VER="${ENV_PROMPT_VER:-v8}"
+fi
+
 # Tunables
-PROMPT_VER="${PROMPT_VER:-v8}"
 VERIFY_LIMIT="${VERIFY_LIMIT:-20}"
 EVENTS_EXTRACT_LIMIT="${EVENTS_EXTRACT_LIMIT:-5000}"
 POSTS_MIN="${POSTS_MIN:-50}"
@@ -82,30 +138,134 @@ else
   CONSUME_SYNC="${CONSUME_SYNC:-0}"  # prod: safer to enqueue, not sync-run in one process
 fi
 
-CONSUME_LIMIT="${CONSUME_LIMIT:-0}" # 0 = all
+CONSUME_LIMIT="${CONSUME_LIMIT:-0}" # 0 = all (IMPORTANT)
 
 # Safety gate for prod destructive actions
 CONFIRM_PROD="${CONFIRM_PROD:-0}"
 if [[ "$STACK" == "prod" ]]; then
-  if [[ "$RESET" == "1" || "$SEED" == "1" || "$ENQUEUE" == "1" ]]; then
-    if [[ "$CONFIRM_PROD" != "1" ]]; then
-      echo "[err] PROD safety: RESET/SEED/ENQUEUE requested, but CONFIRM_PROD=1 is not set." >&2
-      echo "      Refusing to run destructive steps on prod." >&2
-      exit 2
+  if is_true "$RESET" || is_true "$SEED" || is_true "$ENQUEUE"; then
+    if ! is_true "$CONFIRM_PROD"; then
+      die "PROD safety: RESET/SEED/ENQUEUE requested, but CONFIRM_PROD=1 is not set. Refusing."
     fi
   fi
 fi
 
-echo "== REINDEX =="
-echo "STACK=$STACK"
-echo "DC=$DC_STR"
-echo "PROMPT_VER=$PROMPT_VER"
-echo "FLAGS: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC CONSUME_LIMIT=$CONSUME_LIMIT"
-echo
+# -----------------------------
+# helpers
+# -----------------------------
+header() {
+  echo
+  echo "${C_BLUE}╭──────────────────────[ 🔁 REINDEX ]──────────────────────╮${C_RESET}"
+  printf "  STACK: %s | DC: %s\n" "$STACK" "$DC_STR"
+  printf "  PROMPT_VER: %s\n" "$PROMPT_VER"
+  printf "  services: HZ=%s API=%s DB=%s\n" "$HZ_SVC" "$API_SVC" "$DB_SVC"
+  echo "  flags: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET RESTART_HZ=$RESTART_HORIZON SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC"
+  echo "  limits: POSTS_MIN=$POSTS_MIN VERIFY_LIMIT=$VERIFY_LIMIT EXTRACT_LIMIT=$EVENTS_EXTRACT_LIMIT CONSUME_LIMIT=$CONSUME_LIMIT"
+  echo "${C_BLUE}╰──────────────────────────────────────────────────────────╯${C_RESET}"
+  echo
+}
 
-if [[ "$UP" == "1" ]]; then
-  echo "== 0) docker compose up =="
-  if [[ "$UP_BUILD" == "1" ]]; then
+need_container() {
+  local svc="$1"
+  local id
+  id="$(dc ps -q "$svc" 2>/dev/null || true)"
+  [[ -n "$id" ]] || die "container for service '$svc' not found (dc ps -q $svc is empty)"
+}
+
+wait_horizon() {
+  log "== 2) wait horizon healthy =="
+  local cid st
+  cid="$(dc ps -q "$HZ_SVC" 2>/dev/null || true)"
+  [[ -n "$cid" ]] || die "$HZ_SVC container not found"
+
+  for i in $(seq 1 "$HZ_ATTEMPTS"); do
+    st="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$cid" 2>/dev/null || true)"
+    echo "horizon=$st"
+    echo "$st" | grep -Eq 'running (healthy|nohealth)' && { ok "horizon is ready"; return 0; }
+    sleep "$SMOKE_POLL_SEC"
+  done
+
+  dc logs --tail=200 "$HZ_SVC" || true
+  die "horizon not healthy in time (attempts=$HZ_ATTEMPTS)"
+}
+
+wait_posts() {
+  log "== 5) wait context_posts >= ${POSTS_MIN} =="
+  for i in $(seq 1 "$POSTS_ATTEMPTS"); do
+    local c
+    c="$(dc exec -T "$DB_SVC" sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select count(*) from context_posts;"')"
+    echo "context_posts=$c"
+    if [[ "${c:-0}" -ge "$POSTS_MIN" ]]; then
+      ok "posts reached threshold ($c >= $POSTS_MIN)"
+      return 0
+    fi
+    sleep "$SMOKE_POLL_SEC"
+  done
+  dc logs --tail=200 "$HZ_SVC" || true
+  die "context_posts did not reach POSTS_MIN=$POSTS_MIN in time (attempts=$POSTS_ATTEMPTS)"
+}
+
+wait_llm() {
+  log "== 8) wait llm_jobs done (v=${PROMPT_VER}) =="
+  for i in $(seq 1 "$LLM_ATTEMPTS"); do
+    local row total pend done failed
+    row="$(dc exec -T "$DB_SVC" sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"
+select
+  count(*) as total,
+  count(*) filter (where status in ('pending','processing')) as pend,
+  count(*) filter (where status='completed') as done,
+  count(*) filter (where status='failed') as failed
+from llm_jobs
+where task='events_extract' and prompt_version='${PROMPT_VER}';
+\"")"
+    echo "llm_jobs => $row"
+
+    IFS='|' read -r total pend done failed <<<"$row"
+    total="${total:-0}"; pend="${pend:-999}"
+
+    if [[ "$total" -gt 0 && "$pend" -eq 0 ]]; then
+      ok "llm_jobs finished (total=$total done=$done failed=$failed)"
+      return 0
+    fi
+    sleep "$SMOKE_POLL_SEC"
+  done
+
+  dc exec -T "$DB_SVC" sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -P pager=off -c \"
+select id, context_post_id, status, attempt, retry_at, updated_at
+from llm_jobs
+where task='events_extract' and prompt_version='${PROMPT_VER}'
+order by id desc
+limit 20;\"" || true
+
+  die "llm_jobs not finished in time (attempts=$LLM_ATTEMPTS)"
+}
+
+detect_parser_svc() {
+  if [[ -n "${PARSER_SVC:-}" ]]; then
+    echo "$PARSER_SVC"
+    return 0
+  fi
+  if [[ -n "$(dc ps -q kudab-parser 2>/dev/null || true)" ]]; then
+    echo "kudab-parser"
+  else
+    echo "$HZ_SVC"
+  fi
+}
+
+sql_ids() {
+  # helper for "psql -Atc" that returns rows
+  local q="$1"
+  dc exec -T "$DB_SVC" sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"$q\""
+}
+
+# -----------------------------
+# run
+# -----------------------------
+header
+
+if is_true "$UP"; then
+  log "== 0) docker compose up =="
+  if is_true "$UP_BUILD"; then
     dc up -d --remove-orphans --build
   else
     dc up -d --remove-orphans
@@ -113,95 +273,74 @@ if [[ "$UP" == "1" ]]; then
   echo
 fi
 
-if [[ "$MIGRATE" == "1" ]]; then
-  echo "== 0.5) MIGRATE (kudab-api) =="
-  dc exec -T kudab-api php artisan migrate --force
+# ensure core containers exist if we will use them
+need_container "$HZ_SVC"
+need_container "$API_SVC"
+need_container "$DB_SVC"
+
+if is_true "$MIGRATE"; then
+  log "== 0.5) MIGRATE ($API_SVC) =="
+  dc exec -T "$API_SVC" php artisan migrate --force
   echo
 fi
 
-if [[ "$RESET" == "1" ]]; then
-  echo "== 1) RESET (truncate/redis/horizon terminate) =="
-  dc exec -T kudab-horizon php artisan dev:reset --seed=0 --redis=1 --horizon=1
+if is_true "$RESET"; then
+  log "== 1) RESET (truncate/redis/horizon terminate) =="
+  dc exec -T "$HZ_SVC" php artisan dev:reset --seed=0 --redis=1 --horizon=1
   echo
 fi
 
-if [[ "$RESTART_HORIZON" == "1" ]]; then
-  echo "== 1.1) restart horizon =="
-  dc restart kudab-horizon
+if is_true "$RESTART_HORIZON"; then
+  log "== 1.1) restart horizon ($HZ_SVC) =="
+  dc restart "$HZ_SVC"
   echo
 fi
 
-echo "== 2) wait horizon healthy =="
-cid="$(dc ps -q kudab-horizon || true)"
-test -n "${cid:-}" || (echo "[err] kudab-horizon container not found"; exit 2)
-
-for i in $(seq 1 "$HZ_ATTEMPTS"); do
-  st="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "$cid" 2>/dev/null || true)"
-  echo "horizon=$st"
-  echo "$st" | grep -Eq 'running (healthy|nohealth)' && break
-  sleep "$SMOKE_POLL_SEC"
-done
+wait_horizon
 echo
 
-if [[ "$SEED" == "1" ]]; then
-  echo "== 3) SEED =="
-  dc exec -T kudab-api php artisan db:seed --force
+if is_true "$SEED"; then
+  log "== 3) SEED =="
+  dc exec -T "$API_SVC" php artisan db:seed --force
   echo
 fi
 
-if [[ "$ENQUEUE" == "1" ]]; then
-  echo "== 4) ENQUEUE communities =="
-  # Prefer kudab-parser if it's running, else fallback to kudab-horizon (same image/cli in your stack)
-  PARSER_SVC="${PARSER_SVC:-}"
-  if [[ -z "$PARSER_SVC" ]]; then
-    if [[ -n "$(dc ps -q kudab-parser 2>/dev/null || true)" ]]; then
-      PARSER_SVC="kudab-parser"
-    else
-      PARSER_SVC="kudab-horizon"
-    fi
-  fi
-  echo "using PARSER_SVC=$PARSER_SVC"
+if is_true "$ENQUEUE"; then
+  log "== 4) ENQUEUE communities =="
+  PARSER_SVC="$(detect_parser_svc)"
+  log "using PARSER_SVC=$PARSER_SVC"
   dc exec -T "$PARSER_SVC" php artisan parser:enqueue:communities
   echo
 
-  echo "== 5) wait context_posts >= ${POSTS_MIN} =="
-  for i in $(seq 1 "$POSTS_ATTEMPTS"); do
-    c="$(dc exec -T kudab-db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select count(*) from context_posts;"')"
-    echo "context_posts=$c"
-    if [[ "${c:-0}" -ge "$POSTS_MIN" ]]; then break; fi
-    sleep "$SMOKE_POLL_SEC"
-  done
+  wait_posts
   echo
 fi
 
-if [[ "$VERIFY" == "1" ]]; then
-  echo "== 6) VERIFY communities (3 attempts each) =="
-  ids="$(dc exec -T kudab-db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select id from communities order by id;"')"
+if is_true "$VERIFY"; then
+  log "== 6) VERIFY communities (3 attempts each) =="
+  ids="$(sql_ids 'select id from communities order by id;')"
   n=0
   for cid in $ids; do
     n=$((n+1))
     echo
     echo "-- verify [$n] community_id=$cid --"
-    ok=0
+    okk=0
     for a in 1 2 3; do
       echo "attempt=$a"
-      if dc exec -T kudab-horizon php artisan parser:verify:community:verify-locate "$cid" --limit="$VERIFY_LIMIT" --save --overwrite --clear-on-aggregator; then
-        ok=1
+      if dc exec -T "$HZ_SVC" php artisan parser:verify:community:verify-locate "$cid" --limit="$VERIFY_LIMIT" --save --overwrite --clear-on-aggregator; then
+        okk=1
         break
       fi
       sleep "$SMOKE_POLL_SEC"
     done
-    if [[ "$ok" -ne 1 ]]; then
-      echo "[err] verify failed for community_id=$cid after 3 attempts" >&2
-      exit 1
-    fi
+    [[ "$okk" -eq 1 ]] || die "verify failed for community_id=$cid after 3 attempts"
   done
   echo
 fi
 
-if [[ "$ASSERTS" == "1" ]]; then
-  echo "== 6.1) ASSERT: communities.city_id is filled =="
-  dc exec -T kudab-horizon php -r '
+if is_true "$ASSERTS"; then
+  log "== 6.1) ASSERT: communities.city_id is filled =="
+  dc exec -T "$HZ_SVC" php -r '
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -220,37 +359,27 @@ if ($n > 0) {
   echo
 fi
 
-if [[ "$EXTRACT" == "1" ]]; then
-  echo "== 7) parser:events:extract (prompt_version=${PROMPT_VER}) =="
-  dc exec -T -e LLM_EVENTS_PROMPT_VERSION="$PROMPT_VER" kudab-horizon \
+if is_true "$EXTRACT"; then
+  log "== 7) parser:events:extract (prompt_version=${PROMPT_VER}) =="
+  dc exec -T -e LLM_EVENTS_PROMPT_VERSION="$PROMPT_VER" "$HZ_SVC" \
     php artisan parser:events:extract --limit="$EVENTS_EXTRACT_LIMIT"
   echo
 fi
 
-if [[ "$WAIT_LLM" == "1" ]]; then
-  echo "== 8) wait llm_jobs done (v=${PROMPT_VER}) =="
-  for i in $(seq 1 "$LLM_ATTEMPTS"); do
-    row="$(dc exec -T kudab-db sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"
-select
-  count(*) as total,
-  count(*) filter (where status in ('pending','processing')) as pend,
-  count(*) filter (where status='completed') as done,
-  count(*) filter (where status='failed') as failed
-from llm_jobs
-where task='events_extract' and prompt_version='${PROMPT_VER}';
-\"")"
-    echo "llm_jobs => $row"
-    pend="$(echo "$row" | awk -F'|' '{print $2}')"
-    total="$(echo "$row" | awk -F'|' '{print $1}')"
-    if [[ "${total:-0}" -gt 0 && "${pend:-999}" -eq 0 ]]; then break; fi
-    sleep "$SMOKE_POLL_SEC"
-  done
+if is_true "$WAIT_LLM"; then
+  wait_llm
   echo
 fi
 
-if [[ "$CONSUME" == "1" ]]; then
-  echo "== 9) CONSUME llm_jobs(v=${PROMPT_VER}) -> events =="
-  LIDS="$(dc exec -T kudab-db sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"
+if is_true "$CONSUME"; then
+  log "== 9) CONSUME llm_jobs(v=${PROMPT_VER}) -> events =="
+
+  limit_sql=""
+  if [[ "${CONSUME_LIMIT:-0}" =~ ^[0-9]+$ ]] && [[ "${CONSUME_LIMIT:-0}" -gt 0 ]]; then
+    limit_sql="limit ${CONSUME_LIMIT}"
+  fi
+
+  LIDS="$(sql_ids "
 select lj.id
 from llm_jobs lj
 left join events e
@@ -261,15 +390,15 @@ where lj.task='events_extract'
   and lj.status='completed'
   and e.id is null
 order by lj.id
-${CONSUME_LIMIT:+limit ${CONSUME_LIMIT}};
-\"")"
+${limit_sql};
+")"
 
   k=0
   for lid in $LIDS; do
     k=$((k+1))
     echo "-- consume [$k] llm_job_id=$lid --"
-    if [[ "$CONSUME_SYNC" == "1" ]]; then
-      dc exec -T -e LID="$lid" kudab-horizon php -r '
+    if is_true "$CONSUME_SYNC"; then
+      dc exec -T -e LID="$lid" "$HZ_SVC" php -r '
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -278,7 +407,7 @@ $id = (int) getenv("LID");
 echo "OK consumed {$id}\n";
 '
     else
-      dc exec -T -e LID="$lid" kudab-horizon php -r '
+      dc exec -T -e LID="$lid" "$HZ_SVC" php -r '
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -291,9 +420,9 @@ echo "OK enqueued consume {$id}\n";
   echo
 fi
 
-if [[ "$ASSERTS" == "1" ]]; then
-  echo "== 9.1) ASSERT: events.city_id filled when city present =="
-  dc exec -T kudab-horizon php -r '
+if is_true "$ASSERTS"; then
+  log "== 9.1) ASSERT: events.city_id filled when city present =="
+  dc exec -T "$HZ_SVC" php -r '
 require "vendor/autoload.php";
 $app = require "bootstrap/app.php";
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -327,8 +456,8 @@ if ($n > 0) {
   echo
 fi
 
-echo "== 10) SUMMARY =="
-cat <<'SQL' | dc exec -T kudab-db sh -lc 'psql -v ON_ERROR_STOP=1 -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /dev/stdin'
+log "== 10) SUMMARY =="
+cat <<'SQL' | dc exec -T "$DB_SVC" sh -lc 'psql -v ON_ERROR_STOP=1 -P pager=off -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /dev/stdin'
 select prompt_version, status, count(*) as cnt
 from llm_jobs
 where task='events_extract'
@@ -345,4 +474,4 @@ from events
 where deleted_at is null;
 SQL
 
-echo "DONE."
+ok "DONE."
