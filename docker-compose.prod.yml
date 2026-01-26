@@ -1,7 +1,6 @@
 services:
-  # === API ===================================================================
   kudab-api:
-    image: ${API_IMAGE:-kudab-api}
+    image: ${API_IMAGE:-kudab-api:latest}
     restart: always
     env_file:
       - ./services/kudab-api/.env
@@ -9,7 +8,6 @@ services:
       APP_ENV: production
       APP_DEBUG: "false"   # чтобы About не показывал ENABLED
 
-  # Планировщик для API (если не нужен — удали сервис)
   kudab-api-scheduler:
     image: ${API_IMAGE:-kudab-api}
     command: sh -lc 'while true; do php artisan schedule:run --no-interaction; sleep 60; done'
@@ -22,19 +20,17 @@ services:
       - kudab-db
       - redis
 
-  # === PARSER + QUEUE ========================================================
   kudab-parser:
-    image: ${PARSER_IMAGE:-kudab-parser}
+    image: ${PARSER_IMAGE:-kudab-parser:latest}
+    build: ./services/kudab-parser
     restart: always
     env_file:
       - ./services/kudab-parser/.env
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      # фиксим tinker/psysh "Writing to /.config/psysh is not allowed"
       XDG_CONFIG_HOME: /tmp
       HOME: /tmp
-      # дублируем БД/Redis — чтобы НЕ свалился на sqlite
       DB_CONNECTION: pgsql
       DB_HOST: kudab-db
       DB_PORT: 5432
@@ -49,7 +45,6 @@ services:
       - kudab-db
       - redis
 
-  # Horizon (воркеры очередей парсера)
   kudab-horizon:
     image: ${PARSER_IMAGE:-kudab-parser}
     restart: always
@@ -78,7 +73,6 @@ services:
       - redis
       - kudab-db
 
-  # Планировщик задач парсера (каждую минуту)
   kudab-parser-scheduler:
     image: ${PARSER_IMAGE:-kudab-parser}
     command: sh -lc 'while true; do php artisan schedule:run --no-interaction; sleep 60; done'
