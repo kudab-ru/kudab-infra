@@ -21,7 +21,7 @@ PARSER_CLI_SVC  ?= kudab-parser
 
 # PROMPT_VER берём из .env (LLM_EVENTS_PROMPT_VERSION), но можно переопределить make PROMPT_VER=...
 ENV_PROMPT_VER := $(shell sed -n 's/^LLM_EVENTS_PROMPT_VERSION=//p' .env 2>/dev/null | head -n 1 | tr -d '\r')
-PROMPT_VER   ?= $(if $(strip $(ENV_PROMPT_VER)),$(strip $(ENV_PROMPT_VER)),v5)
+PROMPT_VER   ?= $(if $(strip $(ENV_PROMPT_VER)),$(strip $(ENV_PROMPT_VER)),v8)
 
 BENCH_LIMIT  ?= 50
 BENCH_FILE   ?= llm/bench/posts.json
@@ -42,6 +42,7 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 .PHONY: dev-smoke dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts dev-smoke-llm dev-smoke-report
 .PHONY: dev-smoke-post dev-post
 .PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
+.PHONY: reindex reindex-prod
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
 
@@ -274,7 +275,7 @@ dev-smoke: dev-smoke-reset dev-smoke-wait-horizon dev-smoke-seed dev-smoke-posts
 	@echo "✅ dev-smoke DONE (version=$(PROMPT_VER))"
 
 dev-smoke-reset:
-	$(DEV) exec -T $(HZ_SVC) php artisan dev:reset --seed=0 --redis=1 --horizon=1
+	$(DEV) exec -T $(API_SVC) php artisan dev:reset --seed=0 --redis=1 --horizon=1
 
 dev-smoke-wait-horizon:
 	@cid=`$(DEV) ps -q $(HZ_SVC)`; \
@@ -431,6 +432,14 @@ group by 1 order by 1;"
 	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
 select count(*) as events_total \
 from events where deleted_at is null;"
+
+reindex:
+	@DC='$(DEV)' STACK=dev bash scripts/dev/reindex.sh
+
+# Прод: безопасный режим (без reset/seed/enqueue/verify/assert; consume в очередь, не sync)
+reindex-prod:
+	@DC='$(PROD)' STACK=prod RESET=0 SEED=0 ENQUEUE=0 VERIFY=0 ASSERTS=0 CONSUME_SYNC=0 bash scripts/dev/reindex.sh
+
 
 # -----------------------------
 # Infra: тэги (канон rel-<env>-YYYYMMDD-SS)
