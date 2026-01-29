@@ -36,6 +36,14 @@ SMOKE_POSTS_MIN       ?= $(BENCH_LIMIT)  # ждём минимум постов 
 UPDATE_POLL_SEC       ?= 2
 UPDATE_ATTEMPTS       ?= 20    # best-effort wait ~40s
 
+# --- Dev admin token (Sanctum) ----------------------------------------------
+ADMIN_EMAIL      ?= dev-admin@example.test
+ADMIN_NAME       ?= Dev Admin
+ADMIN_PASS       ?= dev
+ADMIN_ROLE       ?= admin
+TOKEN_NAME       ?= dev
+TOKEN_ABILITIES  ?= *
+
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
@@ -49,6 +57,7 @@ UPDATE_ATTEMPTS       ?= 20    # best-effort wait ~40s
 .PHONY: dev-reindex dev-reindex-verify dev-reindex-extract dev-reindex-wait dev-reindex-consume dev-reindex-summary
 .PHONY: dev-test
 .PHONY: dev-update dev-update-posts dev-update-wait-posts dev-update-extract dev-update-wait dev-update-consume dev-update-summary
+.PHONY: dev-admin-token dev-admin-token-revoke dev-tinker
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -132,6 +141,38 @@ superadmin:
 	$(DEV) exec kudab-api php artisan bot:superadmin $(TG_SUPERADMIN) \
 		--email="$(SUPERADMIN_EMAIL)" \
 		--name="$(SUPERADMIN_NAME)"
+
+# -----------------------------
+# DEV: Sanctum token for Admin API (no tinker)
+# -----------------------------
+
+dev-admin-token:
+	@echo
+	@echo "🔑 DEV Sanctum token (admin)"
+	@echo "email=$(ADMIN_EMAIL) role=$(ADMIN_ROLE) token_name=$(TOKEN_NAME)"
+	@echo
+	$(DEV) exec -T \
+	  -e ADMIN_EMAIL="$(ADMIN_EMAIL)" \
+	  -e ADMIN_NAME="$(ADMIN_NAME)" \
+	  -e ADMIN_PASS="$(ADMIN_PASS)" \
+	  -e ADMIN_ROLE="$(ADMIN_ROLE)" \
+	  -e TOKEN_NAME="$(TOKEN_NAME)" \
+	  -e TOKEN_ABILITIES="$(TOKEN_ABILITIES)" \
+	  $(API_SVC) php -r 'require "vendor/autoload.php"; $$app=require "bootstrap/app.php"; $$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $$email=getenv("ADMIN_EMAIL")?: "dev-admin@example.test"; $$name=getenv("ADMIN_NAME")?: "Dev Admin"; $$pass=getenv("ADMIN_PASS")?: "dev"; $$role=getenv("ADMIN_ROLE")?: "admin"; $$tokenName=getenv("TOKEN_NAME")?: "dev"; $$abilities=getenv("TOKEN_ABILITIES")?: "*"; $$abilitiesArr=($$abilities==="*")?["*"]:array_values(array_filter(array_map("trim",explode(",",$$abilities)))); $$u=App\Models\User::firstOrCreate(["email"=>$$email],["name"=>$$name,"password"=>bcrypt($$pass)]); if(method_exists($$u,"hasRole") && !$$u->hasRole($$role)){ $$u->assignRole($$role);} $$plain=$$u->createToken($$tokenName,$$abilitiesArr)->plainTextToken; echo "✅ user_id=".$$u->id.PHP_EOL; echo "✅ email=".$$u->email.PHP_EOL; echo "✅ name=".$$u->name.PHP_EOL; echo "✅ role=".$$role.PHP_EOL; echo "✅ token_name=".$$tokenName.PHP_EOL; echo PHP_EOL."TOKEN:".PHP_EOL.$$plain.PHP_EOL; echo PHP_EOL."export TOKEN='\''".$$plain."'\''".PHP_EOL;'
+
+dev-admin-token-revoke:
+	@echo
+	@echo "🧹 Revoke all tokens for $(ADMIN_EMAIL)"
+	$(DEV) exec -T \
+	  -e ADMIN_EMAIL="$(ADMIN_EMAIL)" \
+	  $(API_SVC) php -r 'require "vendor/autoload.php"; $$app=require "bootstrap/app.php"; $$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); $$email=getenv("ADMIN_EMAIL")?: "dev-admin@example.test"; $$u=App\Models\User::where("email",$$email)->first(); if(!$$u){ echo "WARN: user not found: ".$$email.PHP_EOL; exit(0);} $$u->tokens()->delete(); echo "✅ revoked tokens for user_id=".$$u->id." email=".$$u->email.PHP_EOL;'
+
+dev-tinker:
+	$(DEV) exec \
+	  -e HOME=/tmp \
+	  -e XDG_CONFIG_HOME=/tmp \
+	  -e PSYSH_CONFIG_DIR=/tmp/psysh \
+	  $(API_SVC) php artisan tinker
 
 fix-port-conflict:
 	@printf "\n\033[1;34m╭─────────────────────[ 🔧 FIX PORT CONFLICT ]──────────────────────╮\033[0m\n\n"

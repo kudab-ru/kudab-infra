@@ -1,6 +1,8 @@
 services:
   kudab-api:
     environment:
+      VK_ACCESS_TOKEN: ${VK_ACCESS_TOKEN}
+      VK_API_VERSION: ${VK_API_VERSION:-5.131}
       APP_ENV: development
       REDIS_HOST: redis
       REDIS_PORT: 6379
