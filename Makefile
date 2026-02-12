@@ -1,4 +1,4 @@
-# Makefile для kudasobrat.ru (v1.1.3)
+# Makefile для kudab.ru (v1.1.3)
 
 COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml

@@ -124,7 +124,7 @@ jobs:
 
       - name: Smoke test (API + Frontend)
         env:
-          APP_URL: https://kudasobrat.ru
+          APP_URL: https://kudab.ru
           # опционально: user:password для Basic Auth
           API_BASIC_AUTH: ${{ secrets.API_BASIC_AUTH }}
           FRONTEND_BASIC_AUTH: ${{ secrets.FRONTEND_BASIC_AUTH }}

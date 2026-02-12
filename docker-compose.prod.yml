@@ -113,7 +113,7 @@ services:
       BOT_ENV: production
       BOT_MODE: webhook
       RUNNER: gunicorn
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     restart: unless-stopped
 
   kudab-bot-cron:
@@ -124,7 +124,7 @@ services:
       BOT_ENV: production
       BOT_MODE: webhook
       RUNNER: cron
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     depends_on:
       - kudab-api
       - kudab-db

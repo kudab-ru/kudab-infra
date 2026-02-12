@@ -66,7 +66,7 @@ services:
     environment:
       BOT_ENV: development
       RUNNER: uvicorn
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     env_file:
       - ./services/kudab-bot/.env.dev
     volumes:
@@ -80,7 +80,7 @@ services:
     environment:
       BOT_ENV: development
       RUNNER: cron
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     volumes:
       - ./services/kudab-bot:/app:rw
 

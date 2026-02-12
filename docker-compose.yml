@@ -168,7 +168,7 @@ services:
     environment:
       BOT_ENV: ${BOT_ENV:-production}
       RUNNER: gunicorn
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     depends_on:
       - kudab-db
       - redis
