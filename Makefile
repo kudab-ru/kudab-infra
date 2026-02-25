@@ -1,5 +1,7 @@
 # Makefile для kudab.ru (v1.1.3)
 
+STACK ?= dev # dev|prod (универсальные алиасы ниже)
+
 COMPOSE = docker compose -f docker-compose.yml
 DEV  = $(COMPOSE) -f docker-compose.dev.yml
 PROD = $(COMPOSE) -f docker-compose.prod.yml
@@ -43,6 +45,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: dev-errors prod-errors dev-parsing-errors prod-parsing-errors dev-outbox-retry prod-outbox-retry dev-community-links prod-community-links dev-url-classify prod-url-classify
+.PHONY: errors parsing-errors outbox-retry community-links url-classify
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
@@ -79,6 +82,12 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-parsing-errors" "🧯  DEV: список ошибок парсинга (ссылка + текст)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-outbox-retry" "🔁  DEV: переочередить outbox (ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-community-links" "🔎  DEV: ссылки сообщества (CID=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-url-classify" "🔎  DEV: url:classify (URL=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "errors"        "🧯  универсально: сводка ошибок (STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "parsing-errors" "🧯  универсально: список ошибок парсинга (STACK=dev|prod, LIMIT=50)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "outbox-retry"  "🔁  универсально: переочередить outbox (STACK=dev|prod, ID=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "community-links" "🔎  универсально: ссылки сообщества (STACK=dev|prod, CID=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "url-classify"  "🔎  универсально: url:classify (STACK=dev|prod, URL=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
@@ -161,6 +170,54 @@ backup:
 	bash scripts/backup_db.sh
 
 # -----------------------------
+# Универсальные алиасы (STACK=dev|prod)
+# -----------------------------
+
+errors:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  $(MAKE) prod-errors; \
+	else \
+	  $(MAKE) dev-errors; \
+	fi
+
+parsing-errors:
+	@set -e; \
+	LIMIT=$${LIMIT:-50}; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  $(MAKE) prod-parsing-errors LIMIT="$$LIMIT"; \
+	else \
+	  $(MAKE) dev-parsing-errors LIMIT="$$LIMIT"; \
+	fi
+
+outbox-retry:
+	@test -n "$(ID)" || (echo "ID is required: make outbox-retry ID=<outbox_id> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  $(MAKE) prod-outbox-retry ID="$(ID)"; \
+	else \
+	  $(MAKE) dev-outbox-retry ID="$(ID)"; \
+	fi
+
+community-links:
+	@test -n "$(CID)" || (echo "CID is required: make community-links CID=<community_id> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  $(MAKE) prod-community-links CID="$(CID)"; \
+	else \
+	  $(MAKE) dev-community-links CID="$(CID)"; \
+	fi
+
+url-classify:
+	@test -n "$(URL)" || (echo "URL is required: make url-classify URL=<url> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  $(MAKE) prod-url-classify URL="$(URL)"; \
+	else \
+	  $(MAKE) dev-url-classify URL="$(URL)"; \
+	fi
+
+# -----------------------------
 # Диагностика (outbox / parsing)
 # -----------------------------
 
@@ -178,6 +235,25 @@ order by id desc limit 30;"; \
 	echo ""; \
 	echo "== parsing_statuses frozen/errored =="; \
 	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select frozen_reason, count(*) as cnt \
+from parsing_statuses \
+where is_frozen=true or last_error is not null or last_error_code is not null \
+group by 1 order by 2 desc;"
+
+prod-errors:
+	@set -e; \
+	echo "== failed jobs =="; \
+	$(PROD) exec -T $(HZ_SVC) php artisan queue:failed --no-ansi || true; \
+	echo ""; \
+	echo "== outbox errors (last 30) =="; \
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select id, topic, status, meta, left(coalesce(error_message,''),140) as err, created_at \
+from outbox_messages \
+where error_message is not null or status='failed' \
+order by id desc limit 30;"; \
+	echo ""; \
+	echo "== parsing_statuses frozen/errored =="; \
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
 select frozen_reason, count(*) as cnt \
 from parsing_statuses \
 where is_frozen=true or last_error is not null or last_error_code is not null \
@@ -230,25 +306,6 @@ where ps.is_frozen=true \
    or ps.last_error_code is not null \
 order by ps.updated_at desc \
 limit $$LIMIT;"
-
-prod-errors:
-	@set -e; \
-	echo "== failed jobs =="; \
-	$(PROD) exec -T $(HZ_SVC) php artisan queue:failed --no-ansi || true; \
-	echo ""; \
-	echo "== outbox errors (last 30) =="; \
-	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
-select id, topic, status, meta, left(coalesce(error_message,''),140) as err, created_at \
-from outbox_messages \
-where error_message is not null or status='failed' \
-order by id desc limit 30;"; \
-	echo ""; \
-	echo "== parsing_statuses frozen/errored =="; \
-	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
-select frozen_reason, count(*) as cnt \
-from parsing_statuses \
-where is_frozen=true or last_error is not null or last_error_code is not null \
-group by 1 order by 2 desc;"
 
 dev-outbox-retry:
 	@test -n "$(ID)" || (echo "ID is required: make dev-outbox-retry ID=<outbox_id>"; exit 1)
