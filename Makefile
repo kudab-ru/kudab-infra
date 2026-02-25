@@ -42,6 +42,7 @@ REINDEX_EVENTS_EXTRACT_LIMIT ?= 2000
 REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
+.PHONY: dev-errors prod-errors dev-parsing-errors prod-parsing-errors dev-outbox-retry prod-outbox-retry dev-community-links prod-community-links dev-url-classify prod-url-classify
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
@@ -74,6 +75,10 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "down"          "🛑  Остановить и удалить все контейнеры"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "logs"          "📜  Хвост логов всех сервисов (tail -f)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "ps"            "🔍  Статус всех контейнеров"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-errors"    "🧯  DEV: сводка ошибок (failed/outbox/parsing_statuses)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-parsing-errors" "🧯  DEV: список ошибок парсинга (ссылка + текст)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-outbox-retry" "🔁  DEV: переочередить outbox (ID=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "dev-community-links" "🔎  DEV: ссылки сообщества (CID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
@@ -154,6 +159,138 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# -----------------------------
+# Диагностика (outbox / parsing)
+# -----------------------------
+
+dev-errors:
+	@set -e; \
+	echo "== failed jobs =="; \
+	$(DEV) exec -T $(HZ_SVC) php artisan queue:failed --no-ansi || true; \
+	echo ""; \
+	echo "== outbox errors (last 30) =="; \
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select id, topic, status, meta, left(coalesce(error_message,''),140) as err, created_at \
+from outbox_messages \
+where error_message is not null or status='failed' \
+order by id desc limit 30;"; \
+	echo ""; \
+	echo "== parsing_statuses frozen/errored =="; \
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select frozen_reason, count(*) as cnt \
+from parsing_statuses \
+where is_frozen=true or last_error is not null or last_error_code is not null \
+group by 1 order by 2 desc;"
+
+dev-parsing-errors:
+	@set -e; \
+	LIMIT=$${LIMIT:-50}; \
+	echo "== parsing_statuses: frozen/errored (limit=$$LIMIT) =="; \
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  ps.community_social_link_id, \
+  csl.community_id, \
+  sn.slug as network, \
+  csl.url, \
+  ps.frozen_reason, \
+  ps.unfreeze_at, \
+  ps.last_error_code, \
+  left(coalesce(ps.last_error,''), 220) as last_error, \
+  ps.updated_at \
+from parsing_statuses ps \
+join community_social_links csl on csl.id = ps.community_social_link_id \
+join social_networks sn on sn.id = csl.social_network_id \
+where ps.is_frozen=true \
+   or ps.last_error is not null \
+   or ps.last_error_code is not null \
+order by ps.updated_at desc \
+limit $$LIMIT;"
+
+prod-parsing-errors:
+	@set -e; \
+	LIMIT=$${LIMIT:-50}; \
+	echo "== parsing_statuses: frozen/errored (limit=$$LIMIT) =="; \
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  ps.community_social_link_id, \
+  csl.community_id, \
+  sn.slug as network, \
+  csl.url, \
+  ps.frozen_reason, \
+  ps.unfreeze_at, \
+  ps.last_error_code, \
+  left(coalesce(ps.last_error,''), 220) as last_error, \
+  ps.updated_at \
+from parsing_statuses ps \
+join community_social_links csl on csl.id = ps.community_social_link_id \
+join social_networks sn on sn.id = csl.social_network_id \
+where ps.is_frozen=true \
+   or ps.last_error is not null \
+   or ps.last_error_code is not null \
+order by ps.updated_at desc \
+limit $$LIMIT;"
+
+prod-errors:
+	@set -e; \
+	echo "== failed jobs =="; \
+	$(PROD) exec -T $(HZ_SVC) php artisan queue:failed --no-ansi || true; \
+	echo ""; \
+	echo "== outbox errors (last 30) =="; \
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select id, topic, status, meta, left(coalesce(error_message,''),140) as err, created_at \
+from outbox_messages \
+where error_message is not null or status='failed' \
+order by id desc limit 30;"; \
+	echo ""; \
+	echo "== parsing_statuses frozen/errored =="; \
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select frozen_reason, count(*) as cnt \
+from parsing_statuses \
+where is_frozen=true or last_error is not null or last_error_code is not null \
+group by 1 order by 2 desc;"
+
+dev-outbox-retry:
+	@test -n "$(ID)" || (echo "ID is required: make dev-outbox-retry ID=<outbox_id>"; exit 1)
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -v ON_ERROR_STOP=1 -c "\
+update outbox_messages set \
+ status='queued', attempt=0, retry_at=null, started_at=null, finished_at=null, \
+ locked_at=null, locked_by=null, error_code=null, error_message=null, updated_at=now() \
+where id=$(ID);"
+
+prod-outbox-retry:
+	@test -n "$(ID)" || (echo "ID is required: make prod-outbox-retry ID=<outbox_id>"; exit 1)
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -v ON_ERROR_STOP=1 -c "\
+update outbox_messages set \
+ status='queued', attempt=0, retry_at=null, started_at=null, finished_at=null, \
+ locked_at=null, locked_by=null, error_code=null, error_message=null, updated_at=now() \
+where id=$(ID);"
+
+dev-community-links:
+	@test -n "$(CID)" || (echo "CID is required: make dev-community-links CID=<community_id>"; exit 1)
+	$(DEV) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select csl.id, sn.slug as network, csl.url, csl.external_community_id, csl.created_at \
+from community_social_links csl \
+join social_networks sn on sn.id=csl.social_network_id \
+where csl.community_id=$(CID) \
+order by csl.id desc;"
+
+prod-community-links:
+	@test -n "$(CID)" || (echo "CID is required: make prod-community-links CID=<community_id>"; exit 1)
+	$(PROD) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -c "\
+select csl.id, sn.slug as network, csl.url, csl.external_community_id, csl.created_at \
+from community_social_links csl \
+join social_networks sn on sn.id=csl.social_network_id \
+where csl.community_id=$(CID) \
+order by csl.id desc;"
+
+dev-url-classify:
+	@test -n "$(URL)" || (echo "URL is required: make dev-url-classify URL=<url>"; exit 1)
+	$(DEV) exec -T $(API_SVC) sh -lc 'php artisan url:classify "$(URL)"'
+
+prod-url-classify:
+	@test -n "$(URL)" || (echo "URL is required: make prod-url-classify URL=<url>"; exit 1)
+	$(PROD) exec -T $(API_SVC) sh -lc 'php artisan url:classify "$(URL)"'
 
 # -----------------------------
 # Superadmin (Telegram -> User)
@@ -342,11 +479,8 @@ dev-smoke-report:
 # Smoke: one existing post (POST_ID)
 # -----------------------------
 
-# 1 = снести derived-данные по посту (events/event_sources/event_interest)
 CLEAN     ?= 1
-# 1 = удалить llm_jobs по посту+версии перед прогоном (детерминированность)
 RESET_LLM ?= 1
-# 1 = ConsumeLlmEventsJob(..., true). Должно быть разрешено allow_no_geo.
 NO_GEO    ?= 0
 
 dev-smoke-post:
@@ -356,7 +490,6 @@ dev-smoke-post:
 	POST_ID=$(POST_ID) PROMPT_VER=$(PROMPT_VER) CLEAN=$(CLEAN) RESET_LLM=$(RESET_LLM) NO_GEO=$(NO_GEO) \
 	  bash scripts/dev/smoke_post.sh
 
-# алиас покороче
 dev-post: dev-smoke-post
 
 # -----------------------------
@@ -378,9 +511,6 @@ reindex:
 	POSTS_MIN='$(REINDEX_POSTS_MIN)' \
 	bash scripts/dev/reindex.sh
 
-# Прод: безопасный режим (без reset/seed/enqueue/verify/assert; consume в очередь, не sync)
-# Прод: безопасный режим по умолчанию, но флаги можно переопределять:
-# make reindex-prod CONFIRM_PROD=1 SEED=1 ENQUEUE=1
 reindex-prod:
 	@set -e; \
 	echo ""; \
@@ -441,7 +571,7 @@ tag-retag:
 	@COMMIT=$$(git rev-list -n1 "$(SRC)"); \
 	DATE=$$(git show -s --format=%cd --date=format:%Y%m%d $$COMMIT); \
 	SEQ=$$(git tag -l "rel-$(ENV)-$$DATE-*" | sed -E 's/.*-([0-9]+)$$/\1/' | sort -n | tail -1 | awk '{print ($$1==""?0:$$1+1)}'); \
-	NEW=rel-$(ENV)-$$DATE-$$(printf '%02d' "$$SEQ"); \
+	NEW=rel-$(ENV)-$$DATE-$$(printf '%02d' "$$SEQ")"; \
 	git tag -a "$$NEW" "$$COMMIT" -m "infra: retag $(SRC) -> $$NEW"; \
 	git push origin "$$NEW"; \
 	git push origin :refs/tags/$(SRC) || true; \
