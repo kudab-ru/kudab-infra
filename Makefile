@@ -22,6 +22,17 @@ DB_SVC          ?= kudab-db
 PARSER_CLI_SVC  ?= kudab-parser
 
 # -----------------------------
+# sugar: allow `make city-on voronezh` instead of `make city-on CITY=voronezh`
+# -----------------------------
+CITY_ARG := $(word 2,$(MAKECMDGOALS))
+ifneq ($(CITY_ARG),)
+  ifneq ($(filter city-on city-off city-info city-toggle,$(firstword $(MAKECMDGOALS))),)
+    CITY ?= $(CITY_ARG)
+    $(eval $(CITY_ARG):;@:)
+  endif
+endif
+
+# -----------------------------
 # LLM / Parser: one-button dev smoke test
 # -----------------------------
 
@@ -61,6 +72,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: reindex reindex-prod
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
+.PHONY: cities city-info city-on city-off city-set city-toggle
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -90,6 +102,13 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "outbox-retry"  "🔁  parsing: переочередить outbox (STACK=dev|prod, ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "community-links" "🔎  parsing: ссылки сообщества (STACK=dev|prod, CID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "url-classify"  "🔎  parsing: url:classify (STACK=dev|prod, URL=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-info"     "🏙️  Город: подробности + frozen по причинам (STACK=dev|prod, CITY=slug|id)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-on"       "✅  Город: включить (active) + разморозить city_inactive (STACK=dev|prod, CITY=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-off"      "⛔  Город: выключить (disabled) + заморозить city_inactive (STACK=dev|prod, CITY=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-set"      "🎚️  Город: выставить статус (STACK=dev|prod, CITY=..., STATUS=active|disabled|limited)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-toggle"   "🔁  Город: toggle (осторожно) (STACK=dev|prod, CITY=...)"
+	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make cities STATUS=active | make city-off CITY=voronezh STACK=prod"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
@@ -192,6 +211,92 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# -----------------------------
+# Cities: управление статусом + парсинг (STACK=dev|prod)
+# -----------------------------
+
+cities:
+	@set -e; \
+	Q="$${Q:-}"; \
+	STATUS="$${STATUS:-}"; \
+	echo "== STACK=$(STACK) | cities (STATUS=$$STATUS Q=$$Q) =="; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+with \
+cc as (select city_id, count(*) cnt from communities where deleted_at is null group by city_id), \
+lc as (select c.city_id, count(*) cnt from community_social_links csl join communities c on c.id=csl.community_id where c.deleted_at is null group by c.city_id), \
+ec as (select city_id, count(*) cnt from events where deleted_at is null group by city_id), \
+fz as ( \
+  select c.city_id, count(*) cnt \
+  from parsing_statuses ps \
+  join community_social_links csl on csl.id=ps.community_social_link_id \
+  join communities c on c.id=csl.community_id \
+  where ps.is_frozen=true and ps.frozen_reason='city_inactive' and c.deleted_at is null \
+  group by c.city_id \
+) \
+select \
+  ct.id, ct.slug, ct.name, ct.status, \
+  coalesce(cc.cnt,0) as communities, \
+  coalesce(lc.cnt,0) as links, \
+  coalesce(ec.cnt,0) as events, \
+  coalesce(fz.cnt,0) as frozen_city \
+from cities ct \
+left join cc on cc.city_id=ct.id \
+left join lc on lc.city_id=ct.id \
+left join ec on ec.city_id=ct.id \
+left join fz on fz.city_id=ct.id \
+where (case when '$$STATUS'='' then true else ct.status='$$STATUS' end) \
+  and (case when '$$Q'='' then true else (ct.slug ilike '%'||'$$Q'||'%' or ct.name ilike '%'||'$$Q'||'%') end) \
+order by ct.status, ct.name;"
+
+city-info:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-info CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	CITY_IN="$(CITY)"; \
+	if echo "$$CITY_IN" | grep -Eq '^[0-9]+$$'; then \
+	  CID="$$CITY_IN"; \
+	else \
+	  CITY_ESC=$$(printf "%s" "$$CITY_IN" | sed "s/'/''/g"); \
+	  CID=$$($(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select id from cities where slug='$$CITY_ESC' limit 1;"); \
+	fi; \
+	test -n "$$CID" || (echo "City not found: $$CITY_IN"; exit 1); \
+	echo "== STACK=$(STACK) | city-info CITY=$$CITY_IN (id=$$CID) =="; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  ct.id, ct.slug, ct.name, ct.status, \
+  (select count(*) from communities c where c.deleted_at is null and c.city_id=ct.id) as communities, \
+  (select count(*) from community_social_links csl join communities c on c.id=csl.community_id where c.deleted_at is null and c.city_id=ct.id) as links, \
+  (select count(*) from events e where e.deleted_at is null and e.city_id=ct.id) as events \
+from cities ct \
+where ct.id=$$CID;"; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select ps.frozen_reason, count(*) as cnt \
+from parsing_statuses ps \
+join community_social_links csl on csl.id = ps.community_social_link_id \
+join communities c on c.id = csl.community_id \
+where c.deleted_at is null \
+  and c.city_id = $$CID \
+  and ps.is_frozen = true \
+group by ps.frozen_reason \
+order by cnt desc;"
+
+# Явные команды безопаснее toggle
+city-on:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-on CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan city:toggle "$(CITY)" --set=active
+
+city-off:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-off CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan city:toggle "$(CITY)" --set=disabled
+
+city-set:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-set CITY=<slug-or-id> STATUS=active|disabled|limited [STACK=dev|prod]"; exit 1)
+	@test -n "$(STATUS)" || (echo "STATUS is required: make city-set CITY=<slug-or-id> STATUS=active|disabled|limited"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan city:toggle "$(CITY)" --set="$(STATUS)"
+
+city-toggle:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-toggle CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan city:toggle "$(CITY)"
 
 # -----------------------------
 # Parsing: универсальные команды (STACK=dev|prod)
