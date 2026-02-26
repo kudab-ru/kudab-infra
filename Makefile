@@ -24,12 +24,16 @@ PARSER_CLI_SVC  ?= kudab-parser
 # -----------------------------
 # sugar: allow `make city-on voronezh` instead of `make city-on CITY=voronezh`
 # and `make posts-refresh-city voronezh`
-# -----------------------------
-CITY_ARG := $(word 2,$(MAKECMDGOALS))
-ifneq ($(CITY_ARG),)
+# and `make link-ban 123`
+ARG2 := $(word 2,$(MAKECMDGOALS))
+ifneq ($(ARG2),)
   ifneq ($(filter city-on city-off city-info city-toggle posts-refresh-city,$(firstword $(MAKECMDGOALS))),)
-    CITY ?= $(CITY_ARG)
-    $(eval $(CITY_ARG):;@:)
+    CITY ?= $(ARG2)
+    $(eval $(ARG2):;@:)
+  endif
+  ifneq ($(filter link-info link-ban link-unban link-gray link-set link-toggle,$(firstword $(MAKECMDGOALS))),)
+    LID ?= $(ARG2)
+    $(eval $(ARG2):;@:)
   endif
 endif
 
@@ -75,6 +79,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: prod-pull prod-deploy prod-deploy-service
 .PHONY: cities city-info city-on city-off city-set city-toggle
 .PHONY: posts-refresh posts-refresh-city
+.PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -104,6 +109,11 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "outbox-retry"  "🔁  parsing: переочередить outbox (STACK=dev|prod, ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "community-links" "🔎  parsing: ссылки сообщества (STACK=dev|prod, CID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "url-classify"  "🔎  parsing: url:classify (STACK=dev|prod, URL=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "links"        "🔗  Источники: список ссылок (CID=..., STATUS=active|gray|black, Q=..., LIMIT=50)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "link-info"    "🔗  Источник: подробности + freeze (LID=<id>)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "link-ban"     "⛔  Источник: в black-list (LID=<id>)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "link-unban"   "✅  Источник: вернуть в active (LID=<id>)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "link-gray"    "🩶  Источник: поставить gray (LID=<id>)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh" "📰  Посты: освежить (enqueue) для всех активных городов (STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh-city" "📰  Посты: освежить по городу (CITY=slug|id, STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
@@ -400,6 +410,85 @@ order by csl.id desc;"
 url-classify:
 	@test -n "$(URL)" || (echo "URL is required: make url-classify URL=<url> [STACK=dev|prod]"; exit 1)
 	$(DC) exec -T $(API_SVC) sh -lc 'php artisan url:classify "$(URL)"'
+
+# -----------------------------
+# Links: black/gray list (community_social_links.status)
+# -----------------------------
+
+links:
+	@set -e; \
+	CID="$${CID:-}"; \
+	STATUS="$${STATUS:-}"; \
+	Q="$${Q:-}"; \
+	LIMIT="$${LIMIT:-50}"; \
+	LIMIT=$$( [ "$$LIMIT" -gt 0 ] 2>/dev/null && [ "$$LIMIT" -le 500 ] && echo "$$LIMIT" || echo 50 ); \
+	echo "== STACK=$(STACK) | links (CID=$$CID STATUS=$$STATUS Q=$$Q LIMIT=$$LIMIT) =="; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  csl.id as lid, \
+  csl.community_id as cid, \
+  left(coalesce(c.name,''), 28) as community, \
+  coalesce(ct.slug,'-') as city, \
+  sn.slug as network, \
+  coalesce(csl.status,'active') as status, \
+  left(coalesce(csl.external_community_id,''), 22) as ext, \
+  left(csl.url, 70) as url \
+from community_social_links csl \
+join communities c on c.id=csl.community_id and c.deleted_at is null \
+join social_networks sn on sn.id=csl.social_network_id \
+left join cities ct on ct.id=c.city_id \
+where (NULLIF('$$CID','') is null OR csl.community_id = NULLIF('$$CID','')::int) \
+  and (case when '$$STATUS'='' then true else coalesce(csl.status,'active') = '$$STATUS' end) \
+  and (case when '$$Q'='' then true else (csl.url ilike '%'||'$$Q'||'%' or coalesce(csl.external_community_id,'') ilike '%'||'$$Q'||'%' or c.name ilike '%'||'$$Q'||'%') end) \
+order by csl.id desc \
+limit $$LIMIT;"
+
+link-info:
+	@test -n "$(LID)" || (echo "LID is required: make link-info LID=<link_id> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	echo "== STACK=$(STACK) | link-info LID=$(LID) =="; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  csl.id as lid, \
+  csl.community_id as cid, \
+  left(coalesce(c.name,''), 40) as community, \
+  coalesce(ct.slug,'-') as city, \
+  sn.slug as network, \
+  coalesce(csl.status,'active') as status, \
+  csl.external_community_id, \
+  csl.url, \
+  csl.last_checked_at \
+from community_social_links csl \
+join communities c on c.id=csl.community_id \
+join social_networks sn on sn.id=csl.social_network_id \
+left join cities ct on ct.id=c.city_id \
+where csl.id = $(LID);"; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  ps.is_frozen, ps.frozen_reason, ps.unfreeze_at, left(coalesce(ps.last_error,''),120) as last_error, ps.updated_at \
+from parsing_statuses ps \
+where ps.community_social_link_id = $(LID);"
+
+link-ban:
+	@test -n "$(LID)" || (echo "LID is required: make link-ban LID=<link_id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan link:toggle "$(LID)" --set=black
+
+link-unban:
+	@test -n "$(LID)" || (echo "LID is required: make link-unban LID=<link_id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan link:toggle "$(LID)" --set=active
+
+link-gray:
+	@test -n "$(LID)" || (echo "LID is required: make link-gray LID=<link_id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan link:toggle "$(LID)" --set=gray
+
+link-set:
+	@test -n "$(LID)" || (echo "LID is required: make link-set LID=<link_id> STATUS=active|gray|black [STACK=dev|prod]"; exit 1)
+	@test -n "$(STATUS)" || (echo "STATUS is required: make link-set LID=<id> STATUS=active|gray|black"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan link:toggle "$(LID)" --set="$(STATUS)"
+
+link-toggle:
+	@test -n "$(LID)" || (echo "LID is required: make link-toggle LID=<link_id> [STACK=dev|prod]"; exit 1)
+	$(DC) exec -T $(API_SVC) php artisan link:toggle "$(LID)"
 
 # -----------------------------
 # Superadmin (Telegram -> User)
