@@ -23,10 +23,11 @@ PARSER_CLI_SVC  ?= kudab-parser
 
 # -----------------------------
 # sugar: allow `make city-on voronezh` instead of `make city-on CITY=voronezh`
+# and `make posts-refresh-city voronezh`
 # -----------------------------
 CITY_ARG := $(word 2,$(MAKECMDGOALS))
 ifneq ($(CITY_ARG),)
-  ifneq ($(filter city-on city-off city-info city-toggle,$(firstword $(MAKECMDGOALS))),)
+  ifneq ($(filter city-on city-off city-info city-toggle posts-refresh-city,$(firstword $(MAKECMDGOALS))),)
     CITY ?= $(CITY_ARG)
     $(eval $(CITY_ARG):;@:)
   endif
@@ -73,6 +74,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
 .PHONY: cities city-info city-on city-off city-set city-toggle
+.PHONY: posts-refresh posts-refresh-city
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -102,12 +104,15 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "outbox-retry"  "🔁  parsing: переочередить outbox (STACK=dev|prod, ID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "community-links" "🔎  parsing: ссылки сообщества (STACK=dev|prod, CID=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "url-classify"  "🔎  parsing: url:classify (STACK=dev|prod, URL=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh" "📰  Посты: освежить (enqueue) для всех активных городов (STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh-city" "📰  Посты: освежить по городу (CITY=slug|id, STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-info"     "🏙️  Город: подробности + frozen по причинам (STACK=dev|prod, CITY=slug|id)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-on"       "✅  Город: включить (active) + разморозить city_inactive (STACK=dev|prod, CITY=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-off"      "⛔  Город: выключить (disabled) + заморозить city_inactive (STACK=dev|prod, CITY=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-set"      "🎚️  Город: выставить статус (STACK=dev|prod, CITY=..., STATUS=active|disabled|limited)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-toggle"   "🔁  Город: toggle (осторожно) (STACK=dev|prod, CITY=...)"
+	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make posts-refresh | make posts-refresh-city CITY=voronezh"
 	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make cities STATUS=active | make city-off CITY=voronezh STACK=prod"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
@@ -211,6 +216,35 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# -----------------------------
+# Posts: refresh (enqueue fetch posts)
+# -----------------------------
+
+posts-refresh:
+	@echo "== STACK=$(STACK) | posts-refresh (enqueue communities posts) =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
+
+posts-refresh-city:
+	@test -n "$(CITY)" || (echo "CITY is required: make posts-refresh-city CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	@set -e; \
+	CITY_IN="$(CITY)"; \
+	if echo "$$CITY_IN" | grep -Eq '^[0-9]+$$'; then \
+	  CITY_ID="$$CITY_IN"; \
+	else \
+	  CITY_ESC=$$(printf "%s" "$$CITY_IN" | sed "s/'/''/g"); \
+	  CITY_ID=$$($(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select id from cities where slug='$$CITY_ESC' limit 1;"); \
+	fi; \
+	test -n "$$CITY_ID" || (echo "City not found: $$CITY_IN"; exit 1); \
+	STATUS=$$($(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select status from cities where id=$$CITY_ID;"); \
+	if [ "$$STATUS" != "active" ]; then \
+	  echo "== city_id=$$CITY_ID status=$$STATUS => skip (enable city first) =="; \
+	  exit 0; \
+	fi; \
+	IDS=$$($(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -Atc "select id from communities where deleted_at is null and city_id=$$CITY_ID order by id;"); \
+	test -n "$$IDS" || (echo "No communities for city_id=$$CITY_ID"; exit 0); \
+	echo "== posts-refresh-city city_id=$$CITY_ID (communities=$$(echo "$$IDS" | wc -l | tr -d ' ')) =="; \
+	printf "%s\n" $$IDS | $(DC) exec -T $(PARSER_CLI_SVC) php -r 'require "vendor/autoload.php"; $$app=require "bootstrap/app.php"; $$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); while(($$l=fgets(STDIN))!==false){ $$id=(int)trim($$l); if($$id>0){ App\Jobs\CollectCommunityPostsJob::dispatch($$id); echo "enqueued community $$id\n"; } }'
 
 # -----------------------------
 # Cities: управление статусом + парсинг (STACK=dev|prod)
