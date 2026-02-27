@@ -181,11 +181,6 @@ prod-deploy-service: prod-pull
 	$(PROD) up -d --no-deps --build --force-recreate $(SVC)
 	$(MAKE) docker-gc || true
 
-rebuild:
-	$(COMPOSE) down
-	$(COMPOSE) build --no-cache
-	$(COMPOSE) up -d
-
 down:
 	$(COMPOSE) down
 
