@@ -80,6 +80,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: cities city-info city-on city-off city-set city-toggle
 .PHONY: posts-refresh posts-refresh-city
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
+.PHONY: groups-index groups-index-dry parser-schedule-list
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -116,6 +117,9 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "link-gray"    "🩶  Источник: поставить gray (LID=<id>)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh" "📰  Посты: освежить (enqueue) для всех активных городов (STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh-city" "📰  Посты: освежить по городу (CITY=slug|id, STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index-dry" "🗓️  Группы: dry-run пересчёта current_event_id (CITY_ID=, COMMUNITY_ID=, STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index"     "🗓️  Группы: пересчитать current_event_id (CITY_ID=, COMMUNITY_ID=, STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "parser-schedule-list" "⏱️  Parser: показать расписание (schedule:list)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-info"     "🏙️  Город: подробности + frozen по причинам (STACK=dev|prod, CITY=slug|id)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-on"       "✅  Город: включить (active) + разморозить city_inactive (STACK=dev|prod, CITY=...)"
@@ -229,6 +233,31 @@ backup:
 posts-refresh:
 	@echo "== STACK=$(STACK) | posts-refresh (enqueue communities posts) =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
+
+#
+# Event groups: выбрать актуальную дату в группе (current_event_id)
+# ENV:
+#   CITY_ID=14 COMMUNITY_ID=5 make groups-index
+#
+groups-index-dry:
+	@set -e; \
+	CITY_ID="$${CITY_ID:-}"; COMMUNITY_ID="$${COMMUNITY_ID:-}"; \
+	echo "== STACK=$(STACK) | events:groups:index --dry-run (CITY_ID=$$CITY_ID COMMUNITY_ID=$$COMMUNITY_ID) =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:index --dry-run \
+	  $${CITY_ID:+--city_id=$$CITY_ID} \
+	  $${COMMUNITY_ID:+--community_id=$$COMMUNITY_ID}
+
+groups-index:
+	@set -e; \
+	CITY_ID="$${CITY_ID:-}"; COMMUNITY_ID="$${COMMUNITY_ID:-}"; \
+	echo "== STACK=$(STACK) | events:groups:index (CITY_ID=$$CITY_ID COMMUNITY_ID=$$COMMUNITY_ID) =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:index \
+	  $${CITY_ID:+--city_id=$$CITY_ID} \
+	  $${COMMUNITY_ID:+--community_id=$$COMMUNITY_ID}
+
+parser-schedule-list:
+	@echo "== STACK=$(STACK) | parser schedule:list =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan schedule:list
 
 posts-refresh-city:
 	@test -n "$(CITY)" || (echo "CITY is required: make posts-refresh-city CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
