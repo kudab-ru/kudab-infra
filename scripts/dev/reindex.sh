@@ -122,6 +122,9 @@ if [[ "$STACK" == "dev" ]]; then
   WAIT_LLM="${WAIT_LLM:-1}"
   CONSUME="${CONSUME:-1}"
   CONSUME_SYNC="${CONSUME_SYNC:-1}"  # dev: deterministic
+
+  # ✅ groups in dev: run automatically after pipeline
+  GROUPS="${GROUPS:-1}"
 else
   UP="${UP:-0}"                # prod: usually already running; don't touch unless asked
   UP_BUILD="${UP_BUILD:-0}"
@@ -136,6 +139,9 @@ else
   WAIT_LLM="${WAIT_LLM:-1}"
   CONSUME="${CONSUME:-1}"
   CONSUME_SYNC="${CONSUME_SYNC:-0}"  # prod: safer to enqueue, not sync-run in one process
+
+  # ✅ groups in prod: off by default (enable manually if needed)
+  GROUPS="${GROUPS:-0}"
 fi
 
 CONSUME_LIMIT="${CONSUME_LIMIT:-0}" # 0 = all (IMPORTANT)
@@ -159,7 +165,7 @@ header() {
   printf "  STACK: %s | DC: %s\n" "$STACK" "$DC_STR"
   printf "  PROMPT_VER: %s\n" "$PROMPT_VER"
   printf "  services: HZ=%s API=%s DB=%s\n" "$HZ_SVC" "$API_SVC" "$DB_SVC"
-  echo "  flags: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET RESTART_HZ=$RESTART_HORIZON SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC"
+  echo "  flags: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET RESTART_HZ=$RESTART_HORIZON SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC GROUPS=$GROUPS"
   echo "  limits: POSTS_MIN=$POSTS_MIN VERIFY_LIMIT=$VERIFY_LIMIT EXTRACT_LIMIT=$EVENTS_EXTRACT_LIMIT CONSUME_LIMIT=$CONSUME_LIMIT"
   echo "${C_BLUE}╰──────────────────────────────────────────────────────────╯${C_RESET}"
   echo
@@ -253,7 +259,6 @@ detect_parser_svc() {
 }
 
 sql_ids() {
-  # helper for "psql -Atc" that returns rows
   local q="$1"
   dc exec -T "$DB_SVC" sh -lc "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Atc \"$q\""
 }
@@ -273,7 +278,6 @@ if is_true "$UP"; then
   echo
 fi
 
-# ensure core containers exist if we will use them
 need_container "$HZ_SVC"
 need_container "$API_SVC"
 need_container "$DB_SVC"
@@ -417,6 +421,21 @@ echo "OK enqueued consume {$id}\n";
 '
     fi
   done
+  echo
+fi
+
+# ✅ GROUPS stage: relink -> index -> prune -> check
+if is_true "$GROUPS"; then
+  log "== 9.5) GROUPS (relink/index/prune/check) =="
+
+  PARSER_SVC="$(detect_parser_svc)"
+  log "using PARSER_SVC=$PARSER_SVC"
+
+  dc exec -T "$PARSER_SVC" php artisan events:groups:relink
+  dc exec -T "$PARSER_SVC" php artisan events:groups:index
+  dc exec -T "$PARSER_SVC" php artisan events:groups:prune
+  dc exec -T "$PARSER_SVC" php artisan events:groups:check --show-mismatches --limit=50
+
   echo
 fi
 

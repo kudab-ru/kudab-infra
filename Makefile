@@ -79,8 +79,8 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: prod-pull prod-deploy prod-deploy-service
 .PHONY: cities city-info city-on city-off city-set city-toggle
 .PHONY: posts-refresh posts-refresh-city
+.PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
-.PHONY: groups-index groups-index-dry parser-schedule-list
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -117,8 +117,16 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "link-gray"    "🩶  Источник: поставить gray (LID=<id>)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh" "📰  Посты: освежить (enqueue) для всех активных городов (STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh-city" "📰  Посты: освежить по городу (CITY=slug|id, STACK=dev|prod)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index-dry" "🗓️  Группы: dry-run пересчёта current_event_id (CITY_ID=, COMMUNITY_ID=, STACK=dev|prod)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index"     "🗓️  Группы: пересчитать current_event_id (CITY_ID=, COMMUNITY_ID=, STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-check"    "🗓️  Группы: check (orphans/mismatches, STACK=dev|prod, LIMIT=50)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-relink-dry" "🗓️  Группы: dry-run relink событий на актуальные group_key"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-relink"    "🗓️  Группы: relink (PROD: CONFIRM=1) — чинит mismatches после изменений логики key"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index-dry" "🗓️  Группы: dry-run пересчёта current_event_id (CITY_ID=, COMMUNITY_ID=)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-index"     "🗓️  Группы: пересчитать current_event_id (CITY_ID=, COMMUNITY_ID=)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-prune-dry" "🗓️  Группы: dry-run чистки пустых event_groups"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-prune"     "🗓️  Группы: prune пустых event_groups (PROD: CONFIRM=1)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-repair-dry" "🗓️  Группы: dry-run relink + index + prune + check"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-repair"     "🗓️  Группы: relink + index + prune + check (PROD: CONFIRM=1)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-smoke"      "🗓️  Группы: smoke API (/web/events?grouped=1 + /web/event-groups/{id})"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "parser-schedule-list" "⏱️  Parser: показать расписание (schedule:list)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-info"     "🏙️  Город: подробности + frozen по причинам (STACK=dev|prod, CITY=slug|id)"
@@ -234,11 +242,34 @@ posts-refresh:
 	@echo "== STACK=$(STACK) | posts-refresh (enqueue communities posts) =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
 
-#
-# Event groups: выбрать актуальную дату в группе (current_event_id)
+# -----------------------------
+# Event groups: repair helpers (STACK=dev|prod)
+# -----------------------------
+
+GROUPS_CHECK_LIMIT ?= 50
+
+groups-check:
+	@set -e; \
+	LIMIT="$${LIMIT:-$(GROUPS_CHECK_LIMIT)}"; \
+	echo "== STACK=$(STACK) | events:groups:check (limit=$$LIMIT) =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:check --show-mismatches --limit=$$LIMIT
+
+groups-relink-dry:
+	@set -e; \
+	echo "== STACK=$(STACK) | events:groups:relink --dry-run =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:relink --dry-run
+
+groups-relink:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ] && [ "$${CONFIRM:-0}" != "1" ]; then \
+	  echo "❌ PROD safety: set CONFIRM=1 (example: CONFIRM=1 make groups-relink STACK=prod)"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | events:groups:relink =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:relink
+
 # ENV:
 #   CITY_ID=14 COMMUNITY_ID=5 make groups-index
-#
 groups-index-dry:
 	@set -e; \
 	CITY_ID="$${CITY_ID:-}"; COMMUNITY_ID="$${COMMUNITY_ID:-}"; \
@@ -254,6 +285,56 @@ groups-index:
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:index \
 	  $${CITY_ID:+--city_id=$$CITY_ID} \
 	  $${COMMUNITY_ID:+--community_id=$$COMMUNITY_ID}
+
+groups-prune-dry:
+	@set -e; \
+	echo "== STACK=$(STACK) | events:groups:prune --dry-run =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:prune --dry-run
+
+groups-prune:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ] && [ "$${CONFIRM:-0}" != "1" ]; then \
+	  echo "❌ PROD safety: set CONFIRM=1 (example: CONFIRM=1 make groups-prune STACK=prod)"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | events:groups:prune =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:prune
+
+groups-repair-dry:
+	@set -e; \
+	echo "== STACK=$(STACK) | groups-repair-dry =="; \
+	$(MAKE) groups-relink-dry STACK=$(STACK); \
+	$(MAKE) groups-index-dry  STACK=$(STACK); \
+	$(MAKE) groups-prune-dry  STACK=$(STACK); \
+	$(MAKE) groups-check      STACK=$(STACK)
+
+groups-repair:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ] && [ "$${CONFIRM:-0}" != "1" ]; then \
+	  echo "❌ PROD safety: set CONFIRM=1 (example: CONFIRM=1 make groups-repair STACK=prod)"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | groups-repair =="; \
+	$(MAKE) groups-relink STACK=$(STACK) CONFIRM=$${CONFIRM:-0}; \
+	$(MAKE) groups-index  STACK=$(STACK); \
+	$(MAKE) groups-prune  STACK=$(STACK) CONFIRM=$${CONFIRM:-0}; \
+	$(MAKE) groups-check  STACK=$(STACK)
+
+groups-smoke:
+	@set -e; \
+	BASE_URL="$${BASE_URL:-http://localhost}"; \
+	command -v jq >/dev/null 2>&1 || { echo "jq is required (install jq)"; exit 2; }; \
+	echo "== grouped feed (BASE_URL=$$BASE_URL) =="; \
+	curl -sS "$$BASE_URL/api/web/events?grouped=1&per_page=200" \
+	  | jq -r '.data[] | select(.group!=null) | "\(.group.id)\tcount=\(.group.count)\t\(.title)"'; \
+	echo; \
+	echo "== counts =="; \
+	curl -sS "$$BASE_URL/api/web/events?grouped=1&per_page=200" \
+	  | jq -r '.data[] | select(.group!=null) | .group.count' | sort -n | uniq -c; \
+	echo; \
+	ID="$$(curl -sS "$$BASE_URL/api/web/events?grouped=1&per_page=200" | jq -r '.data[] | select(.group!=null) | .group.id' | head -n1)"; \
+	echo "group_id=$$ID"; \
+	curl -sS "$$BASE_URL/api/web/event-groups/$$ID" | jq '.data.group, (.data.items|length)'
 
 parser-schedule-list:
 	@echo "== STACK=$(STACK) | parser schedule:list =="; \
