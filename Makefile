@@ -27,7 +27,7 @@ PARSER_CLI_SVC  ?= kudab-parser
 # and `make link-ban 123`
 ARG2 := $(word 2,$(MAKECMDGOALS))
 ifneq ($(ARG2),)
-  ifneq ($(filter city-on city-off city-info city-toggle posts-refresh-city,$(firstword $(MAKECMDGOALS))),)
+  ifneq ($(filter city-on city-off city-info city-toggle posts-refresh-city city-tg-link city-tg-off,$(firstword $(MAKECMDGOALS))),)
     CITY ?= $(ARG2)
     $(eval $(ARG2):;@:)
   endif
@@ -77,7 +77,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: reindex reindex-prod
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
-.PHONY: cities city-info city-on city-off city-set city-toggle
+.PHONY: cities city-info city-on city-off city-set city-toggle city-tg-list city-tg-link city-tg-off
 .PHONY: posts-refresh posts-refresh-city
 .PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
@@ -134,6 +134,11 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-off"      "⛔  Город: выключить (disabled) + заморозить city_inactive (STACK=dev|prod, CITY=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-set"      "🎚️  Город: выставить статус (STACK=dev|prod, CITY=..., STATUS=active|disabled|limited)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-toggle"   "🔁  Город: toggle (осторожно) (STACK=dev|prod, CITY=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-tg-list"  "📣  TG-каналы городов: список привязок (STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-tg-link"  "📣  TG-канал города: привязать/обновить (CITY=..., URL=..., USERNAME=..., DEFAULT=1, DRY=1)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "city-tg-off"   "📣  TG-канал города: выключить привязку (CITY=...)"
+	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make city-tg-link CITY=voronezh URL=https://t.me/kudab_vrn DEFAULT=1"
+	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: STACK=prod make city-tg-link moskva URL=https://t.me/kudab_msk"
 	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make posts-refresh | make posts-refresh-city CITY=voronezh"
 	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make cities STATUS=active | make city-off CITY=voronezh STACK=prod"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
@@ -446,6 +451,43 @@ city-set:
 city-toggle:
 	@test -n "$(CITY)" || (echo "CITY is required: make city-toggle CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
 	$(DC) exec -T $(API_SVC) php artisan city:toggle "$(CITY)"
+
+# -----------------------------
+# City -> Telegram public channel (STACK=dev|prod)
+# -----------------------------
+
+city-tg-list:
+	@set -e; \
+	echo "== STACK=$(STACK) | city-tg-list =="; \
+	$(DC) exec -T $(DB_SVC) psql -U kudab -d kudab -P pager=off -v ON_ERROR_STOP=1 -c "\
+select \
+  cc.id, \
+  c.slug as city_slug, \
+  c.name as city_name, \
+  cc.telegram_url, \
+  cc.telegram_username, \
+  cc.is_active, \
+  cc.is_default, \
+  cc.updated_at \
+from telegram.city_channels cc \
+join cities c on c.id = cc.city_id \
+order by cc.is_default desc, c.name;"
+
+city-tg-link:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-tg-link CITY=<slug-or-id> URL=https://t.me/... [USERNAME=...] [DEFAULT=1] [DRY=1] [STACK=dev|prod]"; exit 1)
+	@test -n "$(URL)"  || (echo "URL is required: make city-tg-link CITY=<slug-or-id> URL=https://t.me/..."; exit 1)
+	@set -e; \
+	ARGS="\"$(CITY)\" --url=\"$(URL)\""; \
+	if [ -n "$(USERNAME)" ]; then ARGS="$$ARGS --username=\"$(USERNAME)\""; fi; \
+	if [ "$${DEFAULT:-$(DEFAULT)}" = "1" ]; then ARGS="$$ARGS --default"; fi; \
+	if [ "$${DRY:-$(DRY)}" = "1" ]; then ARGS="$$ARGS --dry-run"; fi; \
+	echo "== STACK=$(STACK) | city-tg-link CITY=$(CITY) URL=$(URL) DEFAULT=$${DEFAULT:-$(DEFAULT)} DRY=$${DRY:-$(DRY)} =="; \
+	$(DC) exec -T $(API_SVC) sh -lc "php artisan city:channel-link $$ARGS"
+
+city-tg-off:
+	@test -n "$(CITY)" || (echo "CITY is required: make city-tg-off CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
+	@echo "== STACK=$(STACK) | city-tg-off CITY=$(CITY) =="; \
+	$(DC) exec -T $(API_SVC) php artisan city:channel-link "$(CITY)" --off
 
 # -----------------------------
 # Parsing: универсальные команды (STACK=dev|prod)
