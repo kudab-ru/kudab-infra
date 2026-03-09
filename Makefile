@@ -20,6 +20,7 @@ HZ_SVC          ?= kudab-horizon
 API_SVC         ?= kudab-api
 DB_SVC          ?= kudab-db
 PARSER_CLI_SVC  ?= kudab-parser
+BOT_SVC         ?= kudab-bot
 
 # -----------------------------
 # sugar: allow `make city-on voronezh` instead of `make city-on CITY=voronezh`
@@ -67,6 +68,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: errors parsing-errors outbox-retry community-links url-classify
 .PHONY: docker-df docker-gc docker-gc-volumes
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
+.PHONY: bot-commands bot-commands-apply bot-commands-show
 .PHONY: webhook-info webhook-set webhook-del webhook-refresh bot-apply-prod bot-health-prod bot-diag-prod bot-release nginx-reload nginx-test
 .PHONY: snapshot-api snapshot-parser
 .PHONY: tag-release tags-lint tag-del tag-retag tag-move submodules-fix-head
@@ -155,6 +157,9 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-status"   "🧭  Диагностика веток dev/main по всем подмодулям"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-backport" "🧯  Main → Dev во всех сервисах (ff-only) + обновить infra/dev"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "mods-sync-dev" "🤝  Локально выровнять dev=origin/main во всех подмодулям"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "bot-commands"       "🤖  Бот: dry-run синка подсказок Telegram (STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "bot-commands-apply" "🤖  Бот: применить подсказки Telegram (STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "bot-commands-show"  "🤖  Бот: показать команды в default и all_private_chats/ru"
 	@printf "\n"
 
 init:
@@ -698,6 +703,22 @@ bot-restart:
 
 bot-logs:
 	$(COMPOSE) logs -f --tail=200 kudab-bot
+
+# -----------------------------
+# Бот: Telegram-команды / подсказки
+# -----------------------------
+
+bot-commands:
+	@echo "== STACK=$(STACK) | bot commands dry-run =="; \
+	$(DC) exec -T $(BOT_SVC) python -m app.bot.cron.sync_commands
+
+bot-commands-apply:
+	@echo "== STACK=$(STACK) | bot commands apply =="; \
+	$(DC) exec -T $(BOT_SVC) python -m app.bot.cron.sync_commands --apply
+
+bot-commands-show:
+	@echo "== STACK=$(STACK) | bot commands show =="; \
+	$(DC) exec -T $(BOT_SVC) python -m app.bot.cron.show_commands
 
 # -----------------------------
 # Бот (prod) — вебхук
