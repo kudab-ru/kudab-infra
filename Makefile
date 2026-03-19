@@ -207,13 +207,13 @@ down:
 	$(COMPOSE) down
 
 logs:
-	$(COMPOSE) logs -f --tail=50
+	$(DC) logs -f --tail=50
 
 ps:
-	$(COMPOSE) ps
+	$(DC) ps
 
 migrate:
-	docker exec -it kudab-api php artisan migrate
+	$(DEV) exec $(API_SVC) php artisan migrate
 
 migrate-prod:
 	$(PROD) exec kudab-api php artisan migrate --force
@@ -561,7 +561,7 @@ order by csl.id desc;"
 
 url-classify:
 	@test -n "$(URL)" || (echo "URL is required: make url-classify URL=<url> [STACK=dev|prod]"; exit 1)
-	$(DC) exec -T $(API_SVC) sh -lc 'php artisan url:classify "$(URL)"'
+	$(DC) exec -T $(API_SVC) php artisan url:classify "$(URL)"
 
 # -----------------------------
 # Links: black/gray list (community_social_links.status)
@@ -937,7 +937,7 @@ tag-retag:
 	@COMMIT=$$(git rev-list -n1 "$(SRC)"); \
 	DATE=$$(git show -s --format=%cd --date=format:%Y%m%d $$COMMIT); \
 	SEQ=$$(git tag -l "rel-$(ENV)-$$DATE-*" | sed -E 's/.*-([0-9]+)$$/\1/' | sort -n | tail -1 | awk '{print ($$1==""?0:$$1+1)}'); \
-	NEW=rel-$(ENV)-$$DATE-$$(printf '%02d' "$$SEQ")"; \
+	NEW=rel-$(ENV)-$$DATE-$$(printf '%02d' "$$SEQ"); \
 	git tag -a "$$NEW" "$$COMMIT" -m "infra: retag $(SRC) -> $$NEW"; \
 	git push origin "$$NEW"; \
 	git push origin :refs/tags/$(SRC) || true; \
