@@ -82,7 +82,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 #### Контакты и поддержка
 
-- [Telegram](https://t.me/ya_solomka) — быстрые вопросы по инфраструктуре/деплою
+- [Telegram](https://t.me/mkrasyuk) — быстрые вопросы по инфраструктуре/деплою
 
 ---
 
