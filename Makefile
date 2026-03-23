@@ -22,6 +22,13 @@ DB_SVC          ?= kudab-db
 PARSER_CLI_SVC  ?= kudab-parser
 BOT_SVC         ?= kudab-bot
 
+# --- Tests (pgsql) -----------------------------------------------------------
+TEST_DB_NAME    ?= kudab_test
+TEST_DB_USER    ?= kudab
+TEST_DB_HOST    ?= kudab-db
+TEST_DB_PORT    ?= 5432
+FILTER          ?=
+
 # -----------------------------
 # sugar: allow `make city-on voronezh` instead of `make city-on CITY=voronezh`
 # and `make posts-refresh-city voronezh`
@@ -83,6 +90,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: posts-refresh posts-refresh-city
 .PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
+.PHONY: test-db-init test-migrate test test-filter test-fresh
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -145,6 +153,11 @@ help:
 	@printf " \033[90m%-18s\033[0m %s\n" "" "пример: make cities STATUS=active | make city-off CITY=voronezh STACK=prod"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate"       "📂  Artisan migrate (интерактивно)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "migrate-prod"  "📂  Artisan migrate в PROD (--force)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test-db-init"  "🧪  Tests: создать test DB $(TEST_DB_NAME), если её нет (dev only)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test-migrate"  "🧪  Tests: прогнать миграции в testing (pgsql)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test"          "🧪  Tests: запустить весь набор в testing"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test-filter"   "🧪  Tests: прогнать по фильтру (FILTER=Event)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test-fresh"    "⚠️  Tests: migrate:fresh --seed в testing"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"        "💾  Ручной backup БД через scripts/backup_db.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "superadmin"    "👑  Ensure супер-админ в DEV (TG_SUPERADMIN=...)"
@@ -217,6 +230,71 @@ migrate:
 
 migrate-prod:
 	$(PROD) exec kudab-api php artisan migrate --force
+
+# -----------------------------
+# Tests (pgsql, dev only)
+# Требует:
+# - services/kudab-api/.env.testing
+# - phpunit.xml без принудительных DB_CONNECTION=sqlite / DB_DATABASE=:memory:
+# -----------------------------
+
+test-db-init:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test-db-init DB=$(TEST_DB_NAME) =="; \
+	DB_EXISTS=$$($(DC) exec -T $(DB_SVC) psql -U $(TEST_DB_USER) -d postgres -Atc "select 1 from pg_database where datname='$(TEST_DB_NAME)' limit 1;"); \
+	if [ "$$DB_EXISTS" = "1" ]; then \
+	  echo "✅ test db exists: $(TEST_DB_NAME)"; \
+	else \
+	  $(DC) exec -T $(DB_SVC) psql -U $(TEST_DB_USER) -d postgres -v ON_ERROR_STOP=1 -c "create database $(TEST_DB_NAME);"; \
+	  echo "✅ test db created: $(TEST_DB_NAME)"; \
+	fi
+
+test-migrate: test-db-init
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test-migrate DB=$(TEST_DB_NAME) =="; \
+	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
+	$(DC) exec -T $(API_SVC) php artisan migrate --env=testing --force
+
+test:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test =="; \
+	$(MAKE) test-db-init STACK=$(STACK); \
+	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
+	$(DC) exec -T $(API_SVC) php artisan test --env=testing
+
+test-filter:
+	@test -n "$(FILTER)" || (echo "FILTER is required: make test-filter FILTER=<Event|City|Bot...>"; exit 1)
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test-filter FILTER=$(FILTER) =="; \
+	$(MAKE) test-db-init STACK=$(STACK); \
+	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
+	$(DC) exec -T $(API_SVC) php artisan test --env=testing --filter="$(FILTER)"
+
+test-fresh: test-db-init
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test-fresh DB=$(TEST_DB_NAME) =="; \
+	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
+	$(DC) exec -T $(API_SVC) php artisan migrate:fresh --seed --env=testing --force
 
 # -----------------------------
 # Docker: диск / GC
@@ -824,7 +902,7 @@ dev-smoke-llm:
 	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:make --limit=$(BENCH_LIMIT) --min_text=0 --file=$(BENCH_FILE)
 	@ids=`$(DEV) exec -T $(HZ_SVC) php -r 'echo count(json_decode(@file_get_contents("storage/app/$(BENCH_FILE)"), true) ?? []);'`; \
 	  echo "bench_ids=$$ids"; \
-	  test "$$ids" -gt 0 || (echo "❌ ERROR: bench file has 0 ids ($(BENCH_FILE))"; exit 2)
+	  test "$$ids" -gt 0 || (echo "❌ ERROR: bench file has 0 ids ($(BENCH_FILE))"; exit 1)
 	$(DEV) exec -T $(HZ_SVC) php artisan llm:bench:run $(PROMPT_VER) --file=$(BENCH_FILE) --reset=1
 	@echo "waiting llm_jobs finished (version=$(PROMPT_VER)) ..."; \
 	  for i in $$(seq 1 $(SMOKE_LLM_ATTEMPTS)); do \
