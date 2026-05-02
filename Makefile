@@ -181,6 +181,16 @@ init:
 dev:
 	$(DEV) up -d --build --remove-orphans
 
+dev-up:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --remove-orphans
+
+dev-build:
+	COMPOSE_PARALLEL_LIMIT=1 COMPOSE_BAKE=false docker compose -f docker-compose.yml -f docker-compose.dev.yml build kudab-api kudab-bot kudab-frontend kudab-nginx kudab-parser
+
+dev-rebuild:
+	$(MAKE) dev-build
+	$(MAKE) dev-up
+
 prod:
 	$(PROD) up -d --build --remove-orphans
 
@@ -387,6 +397,24 @@ groups-prune:
 	fi; \
 	echo "== STACK=$(STACK) | events:groups:prune =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:groups:prune
+
+# ENV:
+#   DAYS=30 LIMIT=5000 make events-cleanup-expired-dry
+events-cleanup-expired-dry:
+	@set -e; \
+	DAYS="$${DAYS:-30}"; LIMIT="$${LIMIT:-5000}"; \
+	echo "== STACK=$(STACK) | events:cleanup:expired --dry-run --days=$$DAYS --limit=$$LIMIT =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:cleanup:expired --dry-run --days=$$DAYS --limit=$$LIMIT
+
+events-cleanup-expired:
+	@set -e; \
+	DAYS="$${DAYS:-30}"; LIMIT="$${LIMIT:-5000}"; \
+	if [ "$(STACK)" = "prod" ] && [ "$${CONFIRM:-0}" != "1" ]; then \
+	  echo "❌ PROD safety: set CONFIRM=1 (example: CONFIRM=1 make events-cleanup-expired STACK=prod)"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | events:cleanup:expired --days=$$DAYS --limit=$$LIMIT =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:cleanup:expired --days=$$DAYS --limit=$$LIMIT
 
 groups-repair-dry:
 	@set -e; \
