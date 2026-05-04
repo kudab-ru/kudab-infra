@@ -88,7 +88,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: prod-pull prod-deploy prod-deploy-service
 .PHONY: cities city-info city-on city-off city-set city-toggle city-tg-list city-tg-link city-tg-off
 .PHONY: posts-refresh posts-refresh-city
-.PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list
+.PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list events-quality-address events-quality-hq-coverage
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
 .PHONY: test-db-init test-migrate test test-filter test-fresh
 
@@ -137,6 +137,8 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-repair-dry" "🗓️  Группы: dry-run relink + index + prune + check"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-repair"     "🗓️  Группы: relink + index + prune + check (PROD: CONFIRM=1)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-smoke"      "🗓️  Группы: smoke API (/web/events?grouped=1 + /web/event-groups/{id})"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "events-quality-address" "📍  Address-quality: срез events (DAYS=30, SHOW=20)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "events-quality-hq-coverage" "📍  HQ-coverage: срез communities по kind/has_fixed_place (DAYS=30, SHOW=20)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "parser-schedule-list" "⏱️  Parser: показать расписание (schedule:list)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "cities"        "🏙️  Города: список + счётчики (STACK=dev|prod, STATUS=..., Q=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "city-info"     "🏙️  Город: подробности + frozen по причинам (STACK=dev|prod, CITY=slug|id)"
@@ -415,6 +417,20 @@ events-cleanup-expired:
 	fi; \
 	echo "== STACK=$(STACK) | events:cleanup:expired --days=$$DAYS --limit=$$LIMIT =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:cleanup:expired --days=$$DAYS --limit=$$LIMIT
+
+# ENV: DAYS=30 SHOW=20
+# Read-only: безопасно на prod без CONFIRM.
+events-quality-address:
+	@set -e; \
+	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; \
+	echo "== STACK=$(STACK) | events:quality:address-report --days=$$DAYS --show=$$SHOW =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:quality:address-report --days=$$DAYS --show=$$SHOW
+
+events-quality-hq-coverage:
+	@set -e; \
+	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; \
+	echo "== STACK=$(STACK) | events:quality:hq-coverage --days=$$DAYS --show=$$SHOW =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:quality:hq-coverage --days=$$DAYS --show=$$SHOW
 
 groups-repair-dry:
 	@set -e; \
