@@ -6,7 +6,6 @@
 - [setup.md](setup.md) — быстрый старт и настройка окружения
 - [api.md](api.md) — документация по API
 - [bot.md](bot.md) — сценарии работы Telegram-бота
-- [publisher.md](publisher.md) — автоматические публикации
 - [frontend.md](frontend.md) — описание фронтенда (Nuxt.js)
 - [roadmap.md](roadmap.md) — планы и задачи
 - [business.md](business.md) — бизнес-требования, user stories

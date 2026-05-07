@@ -51,7 +51,6 @@ kudab-infra/
 │   │   ├── ... (src, requirements.txt, Dockerfile)
 │   │   └── .env.example
 │   │
-│   ├── kudab-publisher/           # Паблишер в TG-каналы (aiogram/apscheduler)
 │   │   ├── ... (src, requirements.txt, Dockerfile)
 │   │   └── .env.example
 │   │
@@ -60,11 +59,9 @@ kudab-infra/
 │   │   ├── Dockerfile
 │   │   └── .env.example
 │   │
-│   ├── kudab-admin/               # Admin panel (React-admin)
 │   │   ├── ... (src, Dockerfile)
 │   │   └── .env.example
 │   │
-│   └── kudab-recommendations/     # Рекомендации (Python/FastAPI)
 │       ├── ... (src, Dockerfile)
 │       └── .env.example
 │
@@ -81,6 +78,5 @@ kudab-infra/
     └── workflows/
         ├── build.yml
         ├── test.yml
-        └── deploy.yml
 
 ```

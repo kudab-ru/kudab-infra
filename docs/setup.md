@@ -29,12 +29,9 @@ cp .env.example .env
 cp services/kudab-api/.env.example services/kudab-api/.env
 cp services/kudab-frontend/.env.example services/kudab-frontend/.env
 cp services/kudab-bot/.env.example services/kudab-bot/.env
-cp services/kudab-publisher/.env.example services/kudab-publisher/.env
 cp services/kudab-parser/.env.example services/kudab-parser/.env
-cp services/kudab-admin/.env.example services/kudab-admin/.env
-cp services/kudab-recommendations/.env.example services/kudab-recommendations/.env
 ```
-Проверь и поправь значения под себя (DB, токены, почта, Redis, Swagger).
+Проверь и поправь значения под себя (DB, токены, почта, Redis).
 
 ---
 
@@ -89,8 +86,6 @@ docker compose exec kudab-api php artisan migrate --seed
 
 - API: http://localhost/api/
 - Front: http://localhost/
-- Admin: http://localhost/admin/
-- Swagger: http://localhost:8181
 
 ---
 

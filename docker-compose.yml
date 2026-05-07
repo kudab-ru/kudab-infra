@@ -93,7 +93,8 @@ services:
       - redis
 
   kudab-parser-fpm:
-    image: kudab-parser:latest
+    image: ${PARSER_IMAGE:-kudab-parser:latest}
+    build: ./services/kudab-parser
     container_name: kudab-parser-fpm
     env_file: .env
     user: "${UID}:${GID}"
@@ -110,7 +111,8 @@ services:
 
   kudab-horizon:
     env_file: .env
-    image: kudab-parser:latest
+    image: ${PARSER_IMAGE:-kudab-parser:latest}
+    build: ./services/kudab-parser
     container_name: ${KUDAB_HORIZON_CONTAINER:-kudab-horizon}
     user: "${UID}:${GID}"
     volumes:
@@ -166,7 +168,7 @@ services:
     environment:
       BOT_ENV: ${BOT_ENV:-production}
       RUNNER: gunicorn
-      PUBLIC_SITE_URL: ${APP_URL:-https://kudasobrat.ru}
+      PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
     depends_on:
       - kudab-db
       - redis

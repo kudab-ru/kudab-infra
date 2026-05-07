@@ -18,16 +18,17 @@
 
 #### СЕРВИСЫ И МИКРОСЕРВИСЫ
 
-| Сервис           | Назначение                          | Стек / Особенности              |
-| ---------------- | ----------------------------------- | ------------------------------- |
-| kudab-infra      | meta-репозиторий (инфраструктура)   | Docker Compose, submodules      |
-| kudab-api        | Backend API, бизнес-логика          | Laravel 12, PHP 8.2, PostgreSQL |
-| kudab-frontend   | SSR фронтенд, клиентский UI (PWA)   | Nuxt.js 3, Vue, Tailwind, SSR   |
-| kudab-bot        | Основной Telegram-бот               | Python 3, aiogram, httpx        |
-| kudab-publisher  | Автоматическая публикация в каналы  | Python 3, aiogram, apscheduler  |
-| kudab-nginx      | Reverse-proxy, раздача статики, SSL | NGINX 1.25 (alpine)             |
-| kudab-db         | Хранилище данных                    | PostgreSQL 15+                  |
-| (parser-service) | Парсинг VK, Telegram, сайтов        | Python, Node.js, cron           |
+| Сервис         | Назначение                                      | Стек / Особенности              |
+| -------------- | ----------------------------------------------- | ------------------------------- |
+| kudab-infra    | meta-репозиторий, docker compose, Makefile      | Docker Compose, git submodules  |
+| kudab-api      | Backend API, бизнес-логика, права, статусы      | Laravel, PHP, PostgreSQL        |
+| kudab-frontend | Web-интерфейс и страницы проекта                | Nuxt 3, Vue 3, Tailwind         |
+| kudab-bot      | Telegram-бот, панели и пользовательские сценарии| Python, aiogram, httpx          |
+| kudab-parser   | Команды парсинга, enqueue, verify, extract      | Laravel/PHP CLI                 |
+| kudab-horizon  | Очереди, LLM jobs, consume                      | Laravel Horizon                 |
+| kudab-nginx    | Reverse proxy и точка входа                     | Nginx                           |
+| kudab-db       | Основная база данных                            | PostgreSQL                      |
+| kudab-redis    | Очереди, кэш, служебное состояние               | Redis                           |
 
 ---
 
@@ -35,22 +36,22 @@
 
 - Backend: Laravel 12 (PHP 8.2), PostgreSQL 15+
 - Frontend: Nuxt.js 3 (Vue 3, SSR, PWA), Tailwind CSS
-- Bot & Publisher: Python 3.11, aiogram 3.x, httpx, apscheduler
-- Infrastructure: Docker Compose, Alpine, NGINX, GitHub Actions (CI/CD)
-- Мониторинг: (uptime-kuma, Grafana, Sentry — по мере внедрения)
+- Bot: Python 3.11, aiogram 3.x, httpx
+- Infrastructure: Docker Compose, NGINX, Redis, PostgreSQL, Makefile, при необходимости CI/CD
 
 ---
 
 #### ВЗАИМОДЕЙСТВИЕ И ПОТОК ДАННЫХ
 
-1. Пользователь или бот делает запрос в Nginx.
-2. Nginx проксирует запрос во Frontend (SSR/PWA) или API.
-3. Frontend (Nuxt.js) общается с API для получения/отправки данных, SSR-рендерит страницы, поддерживает web-push и экспорт событий в календари.
-4. API (Laravel) управляет бизнес-логикой, пишет/читает в базу, выдаёт REST-эндпоинты.
-5. Бот и Publisher работают только через REST API, никак не ходят напрямую к БД.
-6. Publisher планирует и выполняет рассылки по Telegram-каналам, взаимодействует с Telegram API.
-7. Внешние источники (VK, сайты) интегрируются через парсер-сервис, его данные попадают в API.
-8. Все действия пользователя фиксируются в БД через API (Single Source of Truth).
+1. Пользователь открывает сайт или Telegram-бот.
+2. Веб-запросы проходят через Nginx во frontend и API.
+3. Frontend и бот работают поверх API; бизнес-логика и проверки находятся в API.
+4. Parser enqueue'ит источники и собирает `context_posts`.
+5. Команды verify уточняют сообщество, город и привязки.
+6. `parser:events:extract` создаёт `llm_jobs` на извлечение событий.
+7. Очереди и Horizon обрабатывают `llm_jobs`.
+8. Consume переносит результат в `events`.
+9. Дополнительно выполняется обслуживание групп событий: relink, index, prune, check.
 
 ---
 
@@ -72,7 +73,6 @@
 - docs/database.dbml — визуальная ER-схема для dbdiagram.io
 - docs/api.md — описание API (методы, сценарии, спецификация)
 - docs/bot.md — сценарии Telegram-бота, команды, flow
-- docs/publisher.md — логика автоматических рассылок
 - docs/setup.md — инструкция по развёртыванию окружения
 
 ---

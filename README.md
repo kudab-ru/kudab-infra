@@ -1,19 +1,18 @@
 #### kudab-infra
 
-Meta-репозиторий для оркестрации и деплоя платформы **kudasobrat.ru**. Содержит инфраструктурные настройки, docker-compose конфигурацию, все сервисы как git-подмодули, шаблоны .env и инструкции для быстрой сборки, запуска и обновления production/dev среды.
+Meta-репозиторий для оркестрации и деплоя платформы **kudab.ru**. Содержит инфраструктурные настройки, docker-compose конфигурацию, все сервисы как git-подмодули, шаблоны .env и инструкции для быстрой сборки, запуска и обновления production/dev среды.
 
 ---
 
 #### Состав
 
-- **docker-compose.yml** — основной compose-файл, включает все сервисы платформы (api, parser, frontend, admin, bot, publisher, recommendations, nginx, redis, swagger, db)
+- **docker-compose.yml** — основной compose-файл платформы: kudab-api, kudab-frontend, kudab-bot, kudab-parser, kudab-horizon, kudab-nginx, kudab-db, kudab-redis
 - **docker-compose.prod.yml** — продакшен-override: переменные окружения, volumes, рестарт always, прод-конфиг nginx, SSL
 - **docker-compose.dev.yml** — дев-override: маунты исходников, дополнительные порты, dev-конфиг nginx, горячая перезагрузка
-- **scripts/** — служебные скрипты: backup_db.sh, migrate.sh, rollback.sh (только используемые!)
+- **scripts/** — служебные скрипты для reindex, диагностики и обслуживания окружения
 - **.env.example, .env.production, .env.development** — шаблоны переменных окружения для сервисов
 - **docs/** — документация, бизнес-логика, структура, архитектура
-- **.github/workflows/deploy.yml** — автоматизация деплоя через GitHub Actions
-
+- **.github/workflows/** — CI/CD-автоматизация, если используется в конкретном окружении
 ---
 
 #### Быстрый старт
@@ -45,17 +44,18 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 ---
 
-#### Автоматизация деплоя (Production)
+#### Деплой
 
-- **CI/CD**: На push в main срабатывает deploy.yml (GitHub Actions)
-- На сервере:
-    - `git pull` и обновление подмодулей
-    - build/pull всех образов
-    - запуск docker compose с prod-override
-    - healthcheck критических сервисов
-    - backup_db.sh, migrate.sh
-    - smoke test (API, frontend)
-    - rollback (автоматически, если деплой неуспешен)
+Основной рабочий способ деплоя и обновления окружения — через Makefile и docker compose.
+
+Полезные команды:
+
+```sh
+make dev
+make prod
+make prod-deploy
+make prod-deploy-service SVC=kudab-bot
+```
 
 ---
 
@@ -67,13 +67,6 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 ---
 
-#### Rollback
-
-- Все сервисы сохраняют предыдущий образ (:latest → :previous)
-- При ошибке деплоя автоматический откат через scripts/rollback.sh
-
----
-
 #### Документация
 
 - Все инструкции, структура, архитектура, бизнес-логика — в **docs/**
@@ -82,10 +75,4 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 #### Контакты и поддержка
 
-- [Telegram](https://t.me/ya_solomka) — быстрые вопросы по инфраструктуре/деплою
-
----
-
-#### Версия
-
-- Актуальная версия: **1.0.1**
+- [Telegram](https://t.me/mkrasyuk) — быстрые вопросы по инфраструктуре/деплою
