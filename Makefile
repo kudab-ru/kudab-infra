@@ -472,6 +472,32 @@ parser-schedule-list:
 	@echo "== STACK=$(STACK) | parser schedule:list =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan schedule:list
 
+# Активные feature-флаги парсера (см. services/kudab-parser/docs/FEATURE_FLAGS.md).
+# Read-only: безопасно на prod без CONFIRM.
+parser-flags:
+	@echo "== STACK=$(STACK) | parser feature flags =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) sh -c 'php -r "\
+require \"/var/www/html/vendor/autoload.php\"; \
+\$$app = require \"/var/www/html/bootstrap/app.php\"; \
+\$$app->make(\"Illuminate\Contracts\Console\Kernel\")->bootstrap(); \
+\$$out = [ \
+  \"events_prompt\"     => env(\"LLM_EVENTS_PROMPT_VERSION\", \"v10\"), \
+  \"prefilter\"         => config(\"llm.prefilter.enabled\"), \
+  \"classify\"          => config(\"llm.classify.enabled\"), \
+  \"classify_routing\"  => config(\"llm.classify.routing_enabled\"), \
+  \"classify_version\"  => config(\"llm.classify.prompt_version\"), \
+  \"cross_dedup\"       => config(\"llm.cross_dedup.enabled\"), \
+  \"cross_dedup_thr\"   => config(\"llm.cross_dedup.threshold\"), \
+  \"cross_dedup_auto\"  => config(\"llm.cross_dedup.auto_merge\"), \
+  \"vision\"            => config(\"llm_vision.enabled\"), \
+  \"vision_mode\"       => config(\"llm_vision.mode\"), \
+  \"rate_rpm\"          => config(\"llm.rate_limit.rpm\"), \
+  \"rate_rps\"          => config(\"llm.rate_limit.rps\"), \
+]; \
+foreach (\$$out as \$$k => \$$v) { \
+  printf(\"  %-20s = %s\n\", \$$k, var_export(\$$v, true)); \
+}"'
+
 posts-refresh-city:
 	@test -n "$(CITY)" || (echo "CITY is required: make posts-refresh-city CITY=<slug-or-id> [STACK=dev|prod]"; exit 1)
 	@set -e; \
