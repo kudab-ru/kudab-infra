@@ -61,6 +61,21 @@ services:
       - ./services/kudab-frontend:/app:rw
       - /app/node_modules
 
+  kudab-admin:
+    environment:
+      NODE_ENV: development
+      # Внутри docker-сети SSR ходит к nginx по hostname
+      KUDAB_API_DEV_PROXY: http://kudab-nginx/api
+      KUDAB_API_ORIGIN_SERVER: http://kudab-nginx
+    # В контейнере dev-сервер слушает 3000 (стандартный nuxt порт).
+    # На хост проброшен 3100 чтобы не конфликтовать с kudab-frontend:3000.
+    command: sh -lc "test -d node_modules || npm ci; npm run dev -- --host 0.0.0.0 --port 3000"
+    ports:
+      - "3100:3000"
+    volumes:
+      - ./services/kudab-admin:/app:rw
+      - /app/node_modules
+
   kudab-bot:
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     environment:

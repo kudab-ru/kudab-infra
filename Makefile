@@ -190,7 +190,7 @@ dev-up:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build --remove-orphans
 
 dev-build:
-	COMPOSE_PARALLEL_LIMIT=1 COMPOSE_BAKE=false docker compose -f docker-compose.yml -f docker-compose.dev.yml build kudab-api kudab-bot kudab-frontend kudab-nginx kudab-parser
+	COMPOSE_PARALLEL_LIMIT=1 COMPOSE_BAKE=false docker compose -f docker-compose.yml -f docker-compose.dev.yml build kudab-api kudab-bot kudab-frontend kudab-admin kudab-nginx kudab-parser
 
 dev-rebuild:
 	$(MAKE) dev-build

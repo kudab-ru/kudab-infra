@@ -157,6 +157,22 @@ services:
     depends_on:
       - kudab-api
 
+  # ----------------------------- Admin --------------------------------
+  # kudab-admin: внутренняя админ-панель на admin.kudab.ru.
+  # Тот же стек что и frontend (Nuxt 4 SSR), но без публичной выдачи.
+  kudab-admin:
+    image: kudab-admin:latest
+    build: ./services/kudab-admin
+    container_name: ${KUDAB_ADMIN_CONTAINER:-kudab-admin}
+    env_file: .env
+    environment:
+      # SSR-фетч из admin'а на api идёт через nginx внутри docker-сети
+      KUDAB_API_ORIGIN_SERVER: http://kudab-nginx
+    expose:
+      - "3000"
+    depends_on:
+      - kudab-api
+
   # ------------------------------- Bot --------------------------------
   kudab-bot:
     build:
