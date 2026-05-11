@@ -106,8 +106,10 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod"          "🚀  Продакшен-режим (build + up, remove-orphans)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-service"  "🚀  Пересобрать/перезапустить один сервис (SVC=...)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-pull"     "⬇️  PROD: стянуть актуальный infra+подмодули (git fetch/reset + submodule update)"
-	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy"   "🚀  PROD: prod-pull + up -d --build --remove-orphans"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy"   "🚀  PROD: full chain (pull → up → migrate → deploy-tasks → gc)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy-service" "🚀  PROD: prod-pull + rebuild/recreate одного сервиса (SVC=...)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy-tasks" "🛠   PROD: запустить one-shot data-tasks (parser:deploy:run-once-tasks)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "prod-deploy-tasks-status" "🔎  PROD: показать pending one-shot tasks (--dry-run)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "docker-df"     "💽  Диск + Docker usage (df -h / + docker system df)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "docker-gc"     "🧹  Docker GC: prune (until=$(DOCKER_GC_UNTIL)) без volumes"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "docker-gc-volumes" "🧹  Docker GC: prune dangling volumes (осторожно, но обычно безопасно)"
@@ -221,8 +223,28 @@ prod-pull:
 	$(MAKE) mods-status || true
 
 prod-deploy: prod-pull
+	@echo "==> [1/4] Build & up containers..."
 	$(PROD) up -d --build --remove-orphans --force-recreate
+	@echo "==> [2/4] Waiting for DB to be ready (5s)..."
+	@sleep 5
+	@echo "==> [3/4] Schema migrations (kudab-api)..."
+	$(PROD) exec -T $(API_SVC) php artisan migrate --force || \
+		(echo "❌ migrate FAILED. Deploy прерван — данные могут быть несинхронны со схемой."; exit 1)
+	@echo "==> [4/4] One-shot data-tasks (kudab-parser, idempotent)..."
+	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks || \
+		(echo "❌ deploy:run-once-tasks FAILED. Запустите `make prod-deploy-tasks-status` для диагностики."; exit 1)
 	$(MAKE) docker-gc || true
+	@echo ""
+	@echo "✅ Deploy complete."
+
+# Запуск только one-shot data-tasks отдельно (не пересобирая контейнеры).
+# Удобно если нужно перепроиграть конкретный task после фикса.
+.PHONY: prod-deploy-tasks prod-deploy-tasks-status
+prod-deploy-tasks:
+	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks
+
+prod-deploy-tasks-status:
+	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks --dry-run
 
 prod-deploy-service: prod-pull
 	@test -n "$(SVC)" || (echo "SVC is required: make prod-deploy-service SVC=<service-name>"; exit 1)
