@@ -125,6 +125,13 @@ if [[ "$STACK" == "dev" ]]; then
 
   # ✅ groups in dev: run automatically after pipeline
   GROUPS="${GROUPS:-1}"
+
+  # ✅ HQ autofix in dev: locate-by-name + promote-from-events + re-consume
+  # needs_geo + geo:backfill. Закрывает гэп для venue_host communities, у
+  # которых verify-locate не нашёл адрес в постах (театры, музеи). После
+  # reset на dev'е без этого Пиковая дама и т.п. остаются без адреса до
+  # scheduler-окна 04:25 (§13q).
+  HQ_AUTOFIX="${HQ_AUTOFIX:-1}"
 else
   UP="${UP:-0}"                # prod: usually already running; don't touch unless asked
   UP_BUILD="${UP_BUILD:-0}"
@@ -142,6 +149,11 @@ else
 
   # ✅ groups in prod: off by default (enable manually if needed)
   GROUPS="${GROUPS:-0}"
+
+  # ✅ HQ autofix in prod: off by default — scheduler уже крутит его 04:25
+  # ежедневно, и promote-from-events может несущественно тронуть communities.
+  # Запускать вручную (HQ_AUTOFIX=1) только если нужно прогнать прямо сейчас.
+  HQ_AUTOFIX="${HQ_AUTOFIX:-0}"
 fi
 
 CONSUME_LIMIT="${CONSUME_LIMIT:-0}" # 0 = all (IMPORTANT)
@@ -165,7 +177,7 @@ header() {
   printf "  STACK: %s | DC: %s\n" "$STACK" "$DC_STR"
   printf "  PROMPT_VER: %s\n" "$PROMPT_VER"
   printf "  services: HZ=%s API=%s DB=%s\n" "$HZ_SVC" "$API_SVC" "$DB_SVC"
-  echo "  flags: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET RESTART_HZ=$RESTART_HORIZON SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC GROUPS=$GROUPS"
+  echo "  flags: UP=$UP UP_BUILD=$UP_BUILD MIGRATE=$MIGRATE RESET=$RESET RESTART_HZ=$RESTART_HORIZON SEED=$SEED ENQUEUE=$ENQUEUE VERIFY=$VERIFY ASSERTS=$ASSERTS EXTRACT=$EXTRACT WAIT_LLM=$WAIT_LLM CONSUME=$CONSUME CONSUME_SYNC=$CONSUME_SYNC HQ_AUTOFIX=$HQ_AUTOFIX GROUPS=$GROUPS"
   echo "  limits: POSTS_MIN=$POSTS_MIN VERIFY_LIMIT=$VERIFY_LIMIT EXTRACT_LIMIT=$EVENTS_EXTRACT_LIMIT CONSUME_LIMIT=$CONSUME_LIMIT"
   echo "${C_BLUE}╰──────────────────────────────────────────────────────────╯${C_RESET}"
   echo
@@ -421,6 +433,18 @@ echo "OK enqueued consume {$id}\n";
 '
     fi
   done
+  echo
+fi
+
+# ✅ HQ-AUTOFIX stage (§13q): locate-by-name + promote-from-events +
+# re-consume needs_geo posts + geo:backfill. Запускается ПОСЛЕ consume
+# (нужны events для promote-from-events) и ДО groups (чтобы groups
+# индексировали обновлённые events после re-consume).
+if is_true "$HQ_AUTOFIX"; then
+  log "== 9.4) HQ AUTOFIX (locate-by-name + promote + re-consume needs_geo + geo:backfill) =="
+  PARSER_SVC="$(detect_parser_svc)"
+  log "using PARSER_SVC=$PARSER_SVC"
+  dc exec -T "$PARSER_SVC" php artisan parser:hq:autofix --quiet-subcommands
   echo
 fi
 
