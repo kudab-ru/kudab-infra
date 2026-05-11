@@ -109,13 +109,16 @@ echo
 echo "== 5) Write bench file with single post id =="
 # ВАЖНО:
 # 1) формат: {"ids":[POST_ID]} чтобы llm:bench:run точно увидел ids
-# 2) пишем в ДВА места: storage/app/<file> и ./<file> — чтобы не зависеть от реализации llm:bench:run
+# 2) llm:bench:run читает через Storage::disk('local'), а в Laravel 11 local-диск
+#    указывает на storage/app/private/ — пишем туда. Дополнительно дублируем в
+#    ./<file> и storage/app/<file> для совместимости со старыми сценариями.
 $DC exec -T -e POST_ID="$POST_ID" -e BENCH_FILE="$BENCH_FILE" kudab-horizon php -r '
 $p = (int)getenv("POST_ID");
 $rel = getenv("BENCH_FILE");
 $payload = ["ids" => [$p]];
 
 $paths = [
+  "storage/app/private/".$rel,
   "storage/app/".$rel,
   $rel,
 ];
@@ -131,7 +134,7 @@ echo "DONE\n";
 
 $DC exec -T kudab-horizon php -r '
 $rel = "'"$BENCH_FILE"'";
-$paths = ["storage/app/".$rel, $rel];
+$paths = ["storage/app/private/".$rel, "storage/app/".$rel, $rel];
 foreach ($paths as $f) {
   $j = json_decode(@file_get_contents($f), true);
   $n = is_array($j) ? count($j["ids"] ?? []) : 0;
