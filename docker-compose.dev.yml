@@ -67,9 +67,9 @@ services:
       # Внутри docker-сети SSR ходит к nginx по hostname
       KUDAB_API_DEV_PROXY: http://kudab-nginx/api
       KUDAB_API_ORIGIN_SERVER: http://kudab-nginx
-    # В контейнере dev-сервер слушает 3000 (стандартный nuxt порт).
+    # В контейнере dev-сервер слушает 3000 (override script.dev=3100 из package.json).
     # На хост проброшен 3100 чтобы не конфликтовать с kudab-frontend:3000.
-    command: sh -lc "test -d node_modules || npm ci; npm run dev -- --host 0.0.0.0 --port 3000"
+    command: sh -lc "test -d node_modules || npm ci; npm run dev -- --port 3000"
     ports:
       - "3100:3000"
     volumes:
