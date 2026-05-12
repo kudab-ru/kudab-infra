@@ -10,3 +10,9 @@ services/kudab-publisher/
 
 # local backups
 *.rollback
+
+# Let's Encrypt / certbot (ключи и renewal-конфиги)
+certs/prod/renewal/
+certs/prod/live/
+certs/prod/archive/
+certs/prod/accounts/
