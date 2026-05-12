@@ -74,7 +74,9 @@ export async function render(req) {
   activeRenders += 1;
   const startedAt = Date.now();
   try {
-    const navWait = waitFor === 'selector' ? 'load' : waitFor;
+    // Для wait_for=selector/text стартуем с быстрого 'load' — конкретное
+    // условие ниже всё равно дождётся реальной готовности страницы.
+    const navWait = (waitFor === 'selector' || waitFor === 'text') ? 'load' : waitFor;
     const resp = await page.goto(req.url, {
       timeout: timeoutMs,
       waitUntil: navWait,
@@ -90,6 +92,29 @@ export async function render(req) {
         timeout: timeoutMs,
         state: 'attached',
       });
+    }
+
+    if (waitFor === 'text') {
+      // SPA-кейс (widget.afisha.yandex.ru и подобные): React/Vue
+      // дорисовывают DOM ПОСЛЕ networkidle, и обычный wait не помогает.
+      // Ждём появления конкретной подстроки или regex'а в innerText.
+      const needle = req.waitText;
+      const needleRe = req.waitTextRegex;
+      if (!needle && !needleRe) {
+        const e = new Error('wait_text_or_regex_required');
+        e.code = 'BAD_REQUEST';
+        throw e;
+      }
+      await page.waitForFunction(
+        ({ s, r }) => {
+          const text = document.body ? document.body.innerText : '';
+          if (s && text.includes(s)) return true;
+          if (r && new RegExp(r).test(text)) return true;
+          return false;
+        },
+        { s: needle || null, r: needleRe || null },
+        { timeout: timeoutMs, polling: 250 },
+      );
     }
 
     const html = await page.content();

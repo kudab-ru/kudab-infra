@@ -50,6 +50,8 @@ app.post('/render', async (req, res) => {
       url: body.url,
       waitFor: body.wait_for,
       waitSelector: body.wait_selector,
+      waitText: body.wait_text,
+      waitTextRegex: body.wait_text_regex,
       timeoutMs: body.timeout_ms,
       userAgent: body.user_agent,
       viewport: body.viewport,
