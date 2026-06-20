@@ -11,6 +11,9 @@ services/kudab-publisher/
 # local backups
 *.rollback
 
+# runtime artifacts
+storage/
+
 # Let's Encrypt / certbot (ключи и renewal-конфиги)
 certs/prod/renewal/
 certs/prod/live/
