@@ -10,9 +10,6 @@
 [submodule "services/kudab-nginx"]
 	path = services/kudab-nginx
 	url = git@github.com:kudab-ru/kudab-nginx.git
-[submodule "services/kudab-publisher"]
-	path = services/kudab-publisher
-	url = git@github.com:kudab-ru/kudab-publisher.git
 [submodule "services/kudab-recommendations"]
     path = services/kudab-recommendations
     url = git@github.com:kudab-ru/kudab-recommendations.git
