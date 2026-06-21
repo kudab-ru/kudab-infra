@@ -106,14 +106,22 @@ services:
     environment:
       NODE_ENV: production
 
+  xray-bridge:
+    image: alpine:3.19
+    network_mode: host
+    command: sh -c "apk add --no-cache socat && socat TCP-LISTEN:1082,bind=172.18.0.1,reuseaddr,fork TCP:127.0.0.1:1081"
+    restart: unless-stopped
+
   kudab-bot:
     env_file:
       - ./services/kudab-bot/.env
     environment:
       BOT_ENV: production
-      BOT_MODE: webhook
+      BOT_MODE: polling
       RUNNER: gunicorn
       PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
+      TG_PROXY: http://172.18.0.1:1082
+    command: bash -lc "pip install gunicorn && gunicorn app.main:app -b 0.0.0.0:8000 -k uvicorn.workers.UvicornWorker --workers 1"
     restart: unless-stopped
 
   kudab-bot-cron:
@@ -122,9 +130,10 @@ services:
       - ./services/kudab-bot/.env
     environment:
       BOT_ENV: production
-      BOT_MODE: webhook
+      BOT_MODE: polling
       RUNNER: cron
       PUBLIC_SITE_URL: ${APP_URL:-https://kudab.ru}
+      TG_PROXY: http://172.18.0.1:1082
     depends_on:
       - kudab-api
       - kudab-db
