@@ -225,15 +225,9 @@ services:
       - kudab-api    # т.к. BroadcastClient ходит в API
       - kudab-db
       - redis
-    # один раз в минуту дёргаем наш cron-скрипт
-    command: >
-      sh -c "
-        echo '[bot-cron] starting loop';
-        while true; do
-          python -m app.bot.cron.run_single_broadcasts || echo '[bot-cron] run failed';
-          sleep 60;
-        done
-      "
+    # Поллер крутит цикл сам (внутренний asyncio-интервал + анти-overlap +
+    # переиспользуемая Bot/прокси-сессия). Интервал — BROADCAST_POLL_INTERVAL_SECONDS.
+    command: sh -lc 'python -m app.bot.cron.run_single_broadcasts'
     restart: unless-stopped
 
   # ------------------------------- Nginx -------------------------------

@@ -138,7 +138,9 @@ services:
       - kudab-api
       - kudab-db
       - redis
-    command: sh -lc 'while true; do python -m app.bot.cron.run_single_broadcasts; sleep 60; done'
+    # Поллер крутит цикл сам (внутренний asyncio-интервал + анти-overlap +
+    # переиспользуемая Bot/прокси-сессия). restart перезапустит при краше.
+    command: sh -lc 'python -m app.bot.cron.run_single_broadcasts'
     restart: always
 
   kudab-nginx:
