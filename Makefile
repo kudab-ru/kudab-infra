@@ -461,6 +461,12 @@ events-quality-city:
 	echo "== STACK=$(STACK) | events:quality:city-report --days=$$DAYS --show=$$SHOW =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:quality:city-report --days=$$DAYS --show=$$SHOW
 
+events-quality-geo-conflicts:
+	@set -e; \
+	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; RADIUS="$${RADIUS:-300}"; \
+	echo "== STACK=$(STACK) | events:quality:geo-conflicts --days=$$DAYS --show=$$SHOW --radius=$$RADIUS =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan events:quality:geo-conflicts --days=$$DAYS --show=$$SHOW --radius=$$RADIUS
+
 groups-repair-dry:
 	@set -e; \
 	echo "== STACK=$(STACK) | groups-repair-dry =="; \
