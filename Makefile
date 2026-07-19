@@ -378,7 +378,8 @@ descriptions-refresh:
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:venues:describe --overwrite --long --save; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:venue-portrait --limit=1000 --save; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:clean-descriptions --limit=0 --save; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:enrich-descriptions --limit=0 --save
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:enrich-descriptions --limit=0 --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:event-describe --limit=0 --save
 
 # -----------------------------
 # Event groups: repair helpers (STACK=dev|prod)
