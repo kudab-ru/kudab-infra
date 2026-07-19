@@ -87,7 +87,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: dev-test
 .PHONY: prod-pull prod-deploy prod-deploy-service
 .PHONY: cities city-info city-on city-off city-set city-toggle city-tg-list city-tg-link city-tg-off
-.PHONY: posts-refresh posts-refresh-city
+.PHONY: posts-refresh posts-refresh-city descriptions-refresh
 .PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list events-quality-address events-quality-hq-coverage events-quality-city
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
 .PHONY: test-db-init test-migrate test test-filter test-fresh
@@ -129,6 +129,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "link-gray"    "🩶  Источник: поставить gray (LID=<id>)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh" "📰  Посты: освежить (enqueue) для всех активных городов (STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "posts-refresh-city" "📰  Посты: освежить по городу (CITY=slug|id, STACK=dev|prod)"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "descriptions-refresh" "✍️   Описания: перегенерить все (venues+портреты+чистка событий) движком (STACK=dev|prod, prod: CONFIRM=1)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-check"    "🗓️  Группы: check (orphans/mismatches, STACK=dev|prod, LIMIT=50)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-relink-dry" "🗓️  Группы: dry-run relink событий на актуальные group_key"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "groups-relink"    "🗓️  Группы: relink (PROD: CONFIRM=1) — чинит mismatches после изменений логики key"
@@ -364,6 +365,19 @@ backup:
 posts-refresh:
 	@echo "== STACK=$(STACK) | posts-refresh (enqueue communities posts) =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:enqueue:communities
+
+# Полное обновление ВСЕХ описаний движком (venues.description + venue tg_portrait +
+# гейт-чистка events.description). Одной командой; на PROD нужен CONFIRM=1.
+descriptions-refresh:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ] && [ "$${CONFIRM:-0}" != "1" ]; then \
+	  echo "❌ PROD safety: set CONFIRM=1 (пример: CONFIRM=1 make descriptions-refresh STACK=prod)"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | descriptions-refresh: venues.description + tg_portrait + event-clean =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:venues:describe --overwrite --long --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:venue-portrait --limit=1000 --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:clean-descriptions --limit=0 --save
 
 # -----------------------------
 # Event groups: repair helpers (STACK=dev|prod)
