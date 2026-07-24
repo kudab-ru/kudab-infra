@@ -22,7 +22,9 @@ import sys, json, base64, re, urllib.parse, urllib.request, shutil, os, subproce
 
 CONFIG = "/usr/local/etc/xray/config.json"
 PROBE_URL = "https://afisha.yandex.ru/"
-SOCKS = "127.0.0.1:1081"
+# xray inbound'ы: SOCKS на :1080, HTTP на :1081. Краулеры/бридж ходят через
+# HTTP-inbound (:1081), поэтому пробиваем именно HTTP-прокси, а не SOCKS.
+HTTP_PROXY = "http://127.0.0.1:1081"
 
 def fetch_sub(url):
     req = urllib.request.Request(url, headers={"User-Agent": "xray-swap/1.0"})
@@ -86,7 +88,7 @@ def write_config(chosen):
 
 def probe():
     try:
-        r = subprocess.run(["curl", "--socks5-hostname", SOCKS, "-m", "8", "-o", "/dev/null",
+        r = subprocess.run(["curl", "-x", HTTP_PROXY, "-m", "8", "-o", "/dev/null",
                             "-s", "-w", "%{http_code}", PROBE_URL], capture_output=True, text=True, timeout=15)
         return r.stdout.strip()
     except Exception:
@@ -132,7 +134,7 @@ def main():
             if ok:
                 print(f"\n✅ Рабочий сервер: #{i} {p['address']}:{p['port']} (HTTP={code}). Конфиг записан, xray перезапущен.")
                 print("Проверь ещё раз вручную при желании:")
-                print(f"  curl --socks5-hostname {SOCKS} -m10 -o/dev/null -w 'proxy=%{{http_code}}\\n' {PROBE_URL}")
+                print(f"  curl -x {HTTP_PROXY} -m10 -o/dev/null -w 'proxy=%{{http_code}}\\n' {PROBE_URL}")
                 return
         print("\n❌ Ни один сервер не пробился. Возможно, проблема шире (провайдер/сеть). Восстанови бэкап: cp "
               + CONFIG + ".bak-swap " + CONFIG)
