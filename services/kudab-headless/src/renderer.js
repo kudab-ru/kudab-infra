@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { config } from './config.js';
 
 let browserPromise = null;
+let browser = null; // разрешённый инстанс — для быстрой liveness-проверки в /health
 let activeRenders = 0;
 
 async function getBrowser() {
@@ -22,18 +23,48 @@ async function getBrowser() {
         // browserPromise держал мёртвый объект и все рендеры вечно падали
         // «Target ... has been closed» (тихий сбой краулеров 2026-07-21: браузер
         // сдох, /health отдавал ok, healthcheck не ловил — 0 событий 3 суток).
+        browser = b;
         b.on('disconnected', () => {
+          browser = null;
           browserPromise = null;
         });
         return b;
       })
       .catch((e) => {
         // launch не удался — не кэшируем провал, дать следующему запросу шанс.
+        browser = null;
         browserPromise = null;
         throw e;
       });
   }
   return browserPromise;
+}
+
+/**
+ * Быстрая (синхронная) проверка живости для /health.
+ * null  — браузер ещё не запущен (норм: поднимется по требованию);
+ * true  — запущен и подключён;
+ * false — есть инстанс, но disconnected (нездоров).
+ */
+export function browserLiveness() {
+  return browser === null ? null : browser.isConnected();
+}
+
+/**
+ * Активная проверка (watchdog): гарантировать, что браузер реально может
+ * отдать контекст. Ловит и краш (disconnect), и ЗАВИСАНИЕ (isConnected=true,
+ * но операции не отвечают) — через таймаут на launch и newContext.
+ */
+export async function selfCheck(timeoutMs = 8000) {
+  const withTimeout = (p, msg) =>
+    Promise.race([
+      p,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(msg)), timeoutMs)),
+    ]);
+  const b = await withTimeout(getBrowser(), 'browser_launch_timeout');
+  const ctx = await withTimeout(b.newContext(), 'browser_context_timeout');
+  await ctx.close().catch(() => {});
+  return true;
 }
 
 export async function shutdownBrowser() {

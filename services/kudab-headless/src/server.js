@@ -1,6 +1,6 @@
 import express from 'express';
 import { config } from './config.js';
-import { render, shutdownBrowser, currentLoad } from './renderer.js';
+import { render, shutdownBrowser, currentLoad, browserLiveness, selfCheck } from './renderer.js';
 
 const app = express();
 app.use(express.json({ limit: '64kb' }));
@@ -26,8 +26,15 @@ function validateUrl(rawUrl) {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
+  // Проверяем РЕАЛЬНУЮ живость браузера, а не только то, что HTTP-сервер отвечает.
+  // browserLiveness(): null = ещё не запущен (норм, поднимется по требованию);
+  // true = подключён; false = есть инстанс, но disconnected (нездоров).
+  // Раньше /health всегда отдавал ok → мёртвый браузер не ловился healthcheck'ом.
+  const live = browserLiveness();
+  const healthy = live !== false;
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'browser_disconnected',
+    browser: live === null ? 'idle' : live ? 'connected' : 'disconnected',
     load: currentLoad(),
   });
 });
@@ -92,8 +99,32 @@ const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`[kudab-headless] listening on :${config.port}`);
 });
 
+// Watchdog: раз в минуту активно проверяем, что браузер реально отдаёт контекст
+// (selfCheck ловит и краш-disconnect, и ЗАВИСАНИЕ через таймаут). Самоисцеление в
+// renderer поднимает браузер по требованию; это — последний рубеж: если браузер
+// неисцелим N раз подряд, выходим из процесса → Docker (restart: unless-stopped)
+// поднимает свежий контейнер. Чтобы «тихая смерть» браузера больше не застревала.
+const WATCHDOG_INTERVAL_MS = 60000;
+const WATCHDOG_MAX_FAILS = 3;
+let watchdogFails = 0;
+const watchdog = setInterval(async () => {
+  try {
+    await selfCheck(8000);
+    watchdogFails = 0;
+  } catch (err) {
+    watchdogFails += 1;
+    console.error(`[watchdog] браузер нездоров (${watchdogFails}/${WATCHDOG_MAX_FAILS}): ${err.message}`);
+    if (watchdogFails >= WATCHDOG_MAX_FAILS) {
+      console.error('[watchdog] браузер неисцелим → process.exit(1) для рестарта контейнера');
+      clearInterval(watchdog);
+      process.exit(1);
+    }
+  }
+}, WATCHDOG_INTERVAL_MS);
+
 async function shutdown(signal) {
   console.log(`[kudab-headless] ${signal} received, shutting down`);
+  clearInterval(watchdog);
   server.close();
   await shutdownBrowser();
   process.exit(0);
