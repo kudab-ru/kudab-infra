@@ -107,8 +107,12 @@ def mask(s):
     return (s[:4] + "…" + s[-2:]) if s and len(s) > 8 else "***"
 
 
-def build_balancer_config(sub_url, base_cfg):
-    """Ядро генератора (переиспользуется в 2b). Возвращает (cfg_dict, meta)."""
+def build_balancer_config(sub_url, base_cfg, only_index=None):
+    """Ядро генератора (переиспользуется в 2b). Возвращает (cfg_dict, meta).
+
+    only_index (mode=single, 2b): взять РОВНО один сервер по индексу в подписке
+    (в исходном порядке parse). Балансер/observatory сохраняются (пул из 1) —
+    так же валидируется xray -test и переживает будущий возврат в failover."""
     uris = fetch_sub(sub_url)
     parsed = []
     for u in uris:
@@ -117,10 +121,25 @@ def build_balancer_config(sub_url, base_cfg):
         except Exception:
             pass
 
+    def supported(p):
+        return p["network"] == "tcp" and p["security"] in ("reality", "tls", "xtls")
+
+    if only_index is not None:
+        if only_index < 0 or only_index >= len(parsed):
+            raise SystemExit(f"only_index={only_index} вне диапазона (серверов: {len(parsed)}).")
+        chosen = parsed[only_index]
+        if not supported(chosen):
+            raise SystemExit(f"Сервер #{only_index} не поддержан (net={chosen['network']} sec={chosen['security']}).")
+        proxy_obs = [build_outbound(chosen, "proxy-0")]
+        cfg = _assemble(base_cfg, proxy_obs)
+        meta = {"pool": [chosen], "skipped": [], "in_tags": cfg["_in_tags"], "active_key": None}
+        del cfg["_in_tags"]
+        return cfg, meta
+
     # только проверенная форма net=tcp (reality/tls); экзотику пропускаем
     pool, skipped = [], []
     for p in parsed:
-        if p["network"] != "tcp" or p["security"] not in ("reality", "tls", "xtls"):
+        if not supported(p):
             skipped.append((p, f"net={p['network']} sec={p['security']}"))
             continue
         pool.append(p)
@@ -144,8 +163,16 @@ def build_balancer_config(sub_url, base_cfg):
         raise SystemExit("Пул пуст — подписка не дала валидных reality/tls tcp серверов.")
 
     proxy_obs = [build_outbound(p, f"proxy-{i}") for i, p in enumerate(pool)]
+    cfg = _assemble(base_cfg, proxy_obs)
+    meta = {"pool": pool, "skipped": skipped, "in_tags": cfg["_in_tags"], "active_key": ak}
+    del cfg["_in_tags"]
+    return cfg, meta
 
-    # сохраняем inbounds/log из базового конфига; direct/block пересобираем детерминированно
+
+def _assemble(base_cfg, proxy_obs):
+    """Собрать xray-конфиг: сохранить inbounds/log/geoip-правила из base,
+    пересобрать outbounds (proxy-* + direct + block) + observatory + balancer.
+    Идемпотентно по routing (выкидывает старые правила на наш balancer)."""
     cfg = {}
     cfg["log"] = base_cfg.get("log", {"loglevel": "warning"})
     cfg["inbounds"] = base_cfg["inbounds"]
@@ -159,10 +186,14 @@ def build_balancer_config(sub_url, base_cfg):
         "probeInterval": PROBE_INTERVAL,
         "enableConcurrency": True,
     }
-    # сохраняем существующие routing-правила (напр. geoip:private→direct), но
-    # ИДЕМПОТЕНТНО: выкидываем любые старые правила, ведущие на наш балансер
-    # (иначе повторная генерация из уже-балансерного base — как делает applier в
-    # 2b — накапливает дубли inbound→balancer). Затем добавляем ровно одно.
+    # локальный gRPC api (127.0.0.1:10085) — для applier'а 2b: `xray api bi tg-bal`
+    # отдаёт активный/eligible серверы балансера (статус для админки). Только
+    # localhost, наружу не торчит.
+    cfg["api"] = {
+        "tag": "api",
+        "listen": "127.0.0.1:10085",
+        "services": ["HandlerService", "StatsService", "ObservatoryService", "RoutingService"],
+    }
     base_routing = base_cfg.get("routing", {})
     in_tags = [ib.get("tag") for ib in cfg["inbounds"] if ib.get("tag")]
     rules = [r for r in base_routing.get("rules", []) if r.get("balancerTag") != BAL_TAG]
@@ -181,8 +212,8 @@ def build_balancer_config(sub_url, base_cfg):
         }],
         "rules": rules,
     }
-    meta = {"pool": pool, "skipped": skipped, "in_tags": in_tags, "active_key": ak}
-    return cfg, meta
+    cfg["_in_tags"] = in_tags
+    return cfg
 
 
 def main():
@@ -191,13 +222,15 @@ def main():
     ap.add_argument("--sub-file")
     ap.add_argument("--base", default="/usr/local/etc/xray/config.json")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--only-index", type=int, default=None,
+                    help="mode=single: взять ровно один сервер по индексу в подписке")
     a = ap.parse_args()
     if not (a.sub_url or a.sub_file):
         ap.error("нужен --sub-url или --sub-file")
     sub_url = a.sub_url or open(a.sub_file).read().strip()
 
     base_cfg = json.load(open(a.base, encoding="utf-8"))
-    cfg, meta = build_balancer_config(sub_url, base_cfg)
+    cfg, meta = build_balancer_config(sub_url, base_cfg, only_index=a.only_index)
 
     json.dump(cfg, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run kudab proxy-config applier periodically (picks up admin changes)
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=20
+AccuracySec=5s
+Unit=proxy-applier.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=kudab proxy-config applier (admin desired-state -> xray failover)
+After=docker.service xray.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+# root: writes /usr/local/etc/xray/*, `systemctl restart xray`, `docker exec kudab-api`
+ExecStart=/usr/bin/python3 /var/www/kudab-infra/scripts/proxy-config-applier.py
+TimeoutStartSec=180
