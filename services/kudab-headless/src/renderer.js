@@ -6,15 +6,32 @@ let activeRenders = 0;
 
 async function getBrowser() {
   if (!browserPromise) {
-    browserPromise = chromium.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-      ],
-    });
+    browserPromise = chromium
+      .launch({
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-blink-features=AutomationControlled',
+        ],
+      })
+      .then((b) => {
+        // Самоисцеление: если браузер упал (краш/OOM/disconnect) — сбрасываем
+        // кэш, чтобы СЛЕДУЮЩИЙ render перезапустил свежий Chromium. Без этого
+        // browserPromise держал мёртвый объект и все рендеры вечно падали
+        // «Target ... has been closed» (тихий сбой краулеров 2026-07-21: браузер
+        // сдох, /health отдавал ok, healthcheck не ловил — 0 событий 3 суток).
+        b.on('disconnected', () => {
+          browserPromise = null;
+        });
+        return b;
+      })
+      .catch((e) => {
+        // launch не удался — не кэшируем провал, дать следующему запросу шанс.
+        browserPromise = null;
+        throw e;
+      });
   }
   return browserPromise;
 }
