@@ -37,10 +37,21 @@ PROBE_URL = "https://api.telegram.org/"
 # probeInterval also bounds the failover-detection window on a real server death
 # (residual ≤~interval blip is inherent to health-check LB — no per-request retry
 # in xray — and is still far better than the single-outbound total-outage today).
-PROBE_INTERVAL = "5s"
+#
+# 2026-07-24 bumped 5s→60s to cut round-the-clock probe traffic THROUGH the VPN.
+# Каждый пробинг = TLS+GET к api.telegram.org сквозь тоннель (~5КБ). 5s×12 серверов
+# ≈ 1 ГБ/сутки — избыточно для бота (не latency-critical, есть ретраи + keep-alive).
+# 60s: failover-детект ≤60с на РЕДКОЙ смерти сервера (приемлемо), трафик ~в 12 раз
+# меньше. Хочешь быстрее failover — 30s (компромисс, вдвое больше трафика).
+PROBE_INTERVAL = "60s"
 BAL_TAG = "tg-bal"
 # leastLoad(maxRTT) drops a server whose fresh probe fails (dead → no RTT).
 MAX_RTT = "3s"
+# Метрируемые серверы подписки (множитель трафика в имени: «(x5 трафик)»,
+# «x10 traffic») — исключаем из failover-пула: их постоянно пингует observatory,
+# а квота у них множится (x5/x10). Оставляем flat-rate. Точечный single-mode их
+# НЕ фильтрует (оператор выбрал сервер явно, пингуется только он).
+METERED_RE = re.compile(r"x\d+\s*(?:трафик|traffic)", re.IGNORECASE)
 
 
 def fetch_sub(url):
@@ -107,6 +118,18 @@ def mask(s):
     return (s[:4] + "…" + s[-2:]) if s and len(s) > 8 else "***"
 
 
+def _dedup(servers):
+    """Убрать повторы по полному reality-кортежу (одинаковые сервер+ключи)."""
+    seen, uniq = set(), []
+    for p in servers:
+        k = (p["address"], p["port"], p["id"], p["pbk"], p["sid"], p["sni"], p["flow"])
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    return uniq
+
+
 def build_balancer_config(sub_url, base_cfg, only_index=None):
     """Ядро генератора (переиспользуется в 2b). Возвращает (cfg_dict, meta).
 
@@ -136,23 +159,27 @@ def build_balancer_config(sub_url, base_cfg, only_index=None):
         del cfg["_in_tags"]
         return cfg, meta
 
-    # только проверенная форма net=tcp (reality/tls); экзотику пропускаем
-    pool, skipped = [], []
+    # только проверенная форма net=tcp (reality/tls); экзотику пропускаем.
+    # Метрируемые (x5/x10 трафик) откладываем — исключим из пула, если flat хватает.
+    flat, metered, skipped = [], [], []
     for p in parsed:
         if not supported(p):
-            skipped.append((p, f"net={p['network']} sec={p['security']}"))
+            skipped.append((p, f"экзотика: net={p['network']} sec={p['security']}"))
             continue
-        pool.append(p)
+        if METERED_RE.search(p.get("name", "")):
+            metered.append(p)
+            continue
+        flat.append(p)
 
-    # дедуп
-    seen, uniq = set(), []
-    for p in pool:
-        k = (p["address"], p["port"], p["id"], p["pbk"], p["sid"], p["sni"], p["flow"])
-        if k in seen:
-            continue
-        seen.add(k)
-        uniq.append(p)
-    pool = uniq
+    # БЕЗОПАСНОСТЬ failover: если flat-серверов (после дедупа) <2 — возвращаем
+    # метрируемые в пул (лучше жечь квоту, чем остаться без резерва).
+    if len(_dedup(flat)) >= 2:
+        pool = _dedup(flat)
+        for p in metered:
+            skipped.append((p, "метрируемый (множитель трафика в имени) — вне failover-пула"))
+    else:
+        # flat недостаточно — оставляем метрируемые ради резерва (в пуле, не в skipped)
+        pool = _dedup(flat + metered)
 
     # current active → proxy-0 (cold-start fallback)
     ak = current_active_key(base_cfg)
