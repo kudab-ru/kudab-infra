@@ -11,6 +11,9 @@ services/kudab-publisher/
 # local backups
 *.rollback
 
+# агент-брифы с секретами (vless-подписки, токены) — только локально
+docs/agent-brief-*.md
+
 # runtime artifacts
 storage/
 
