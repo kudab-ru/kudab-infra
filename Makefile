@@ -376,12 +376,17 @@ descriptions-refresh:
 	  echo "❌ PROD safety: set CONFIRM=1 (пример: CONFIRM=1 make descriptions-refresh STACK=prod)"; \
 	  exit 2; \
 	fi; \
-	echo "== STACK=$(STACK) | descriptions-refresh: venues.description + tg_portrait + event-clean =="; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:venues:describe --overwrite --long --save; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:venue-portrait --limit=1000 --save; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:clean-descriptions --limit=0 --save; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:enrich-descriptions --limit=0 --save; \
-	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:event-describe --limit=0 --save
+	LIMIT="$${LIMIT:-50}"; \
+	if [ "$${CONFIRM_FULL:-0}" = "1" ]; then LIMIT=0; fi; \
+	if [ "$$LIMIT" = "0" ]; then \
+	  echo "⚠️  Полный перегон каталога дорогой моделью (CONFIRM_FULL=1). Стоимость смотри в make llm-usage."; \
+	fi; \
+	echo "== STACK=$(STACK) | descriptions-refresh: LIMIT=$$LIMIT (0 = весь каталог) =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:venues:describe --overwrite --long --skip-fallback --save $${LIMIT:+--limit=$$LIMIT}; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:venue-portrait --limit=$${LIMIT:-50} --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:clean-descriptions --limit=$$LIMIT --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:events:enrich-descriptions --limit=$$LIMIT --save; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:tg:event-describe --limit=$$LIMIT --save
 
 # -----------------------------
 # Event groups: repair helpers (STACK=dev|prod)
