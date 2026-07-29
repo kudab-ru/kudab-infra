@@ -73,6 +73,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 
 .PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
 .PHONY: errors parsing-errors outbox-retry community-links url-classify
+.PHONY: llm-usage
 .PHONY: docker-df docker-gc docker-gc-volumes
 .PHONY: bot-health bot-diag bot-send bot-build bot-rebuild bot-build-prod bot-restart bot-logs
 .PHONY: bot-commands bot-commands-apply bot-commands-show
@@ -117,6 +118,7 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "down"          "🛑  Остановить и удалить все контейнеры"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "logs"          "📜  Хвост логов всех сервисов (tail -f)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "ps"            "🔍  Статус всех контейнеров"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "llm-usage"     "💸  Расход LLM: вызовы/токены/$ по назначению (DAYS=14, BY=purpose|model|day)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "errors"        "🧯  parsing: сводка (STACK=dev|prod)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "parsing-errors" "🧯  parsing: список ошибок (STACK=dev|prod, LIMIT=50)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "outbox-retry"  "🔁  parsing: переочередить outbox (STACK=dev|prod, ID=...)"
@@ -459,6 +461,12 @@ events-cleanup-expired:
 
 # ENV: DAYS=30 SHOW=20
 # Read-only: безопасно на prod без CONFIRM.
+llm-usage:
+	@set -e; \
+	DAYS="$${DAYS:-14}"; BY="$${BY:-purpose}"; \
+	echo "== STACK=$(STACK) | parser:llm:usage --days=$$DAYS --by=$$BY =="; \
+	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:llm:usage --days=$$DAYS --by=$$BY
+
 events-quality-address:
 	@set -e; \
 	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; \
