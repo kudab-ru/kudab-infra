@@ -91,7 +91,7 @@ REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 .PHONY: posts-refresh posts-refresh-city descriptions-refresh
 .PHONY: groups-check groups-relink groups-relink-dry groups-index groups-index-dry groups-prune groups-prune-dry groups-repair groups-repair-dry groups-smoke parser-schedule-list events-quality-address events-quality-hq-coverage events-quality-city
 .PHONY: links link-info link-ban link-unban link-gray link-set link-toggle
-.PHONY: test-db-init test-migrate test test-filter test-fresh
+.PHONY: test-db-init test-migrate test test-filter test-fresh test-parser
 
 help:
 	@printf "\n\033[1;34m╭─────────────────────[ 📦 KUDASOBRAT CLI ]─────────────────────╮\033[0m\n"
@@ -166,6 +166,8 @@ help:
 	@printf " \033[1;36m%-18s\033[0m %s\n" "test"          "🧪  Tests: запустить весь набор в testing"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "test-filter"   "🧪  Tests: прогнать по фильтру (FILTER=Event)"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "test-fresh"    "⚠️  Tests: migrate:fresh --seed в testing"
+	@printf " \033[1;36m%-18s\033[0m %s\n" "test-parser"   "🧪  Tests парсера: sqlite в памяти (FILTER=...)"
+	@printf " \033[90m%-18s\033[0m %s\n" "" "тесты только через эти цели: artisan test напрямую снесёт базу kudab"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "rollback"      "⏪  Откат версии через scripts/rollback.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "backup"        "💾  Ручной backup БД через scripts/backup_db.sh"
 	@printf " \033[1;36m%-18s\033[0m %s\n" "superadmin"    "👑  Ensure супер-админ в DEV (TG_SUPERADMIN=...)"
@@ -333,6 +335,15 @@ test-fresh: test-db-init
 	echo "== STACK=$(STACK) | test-fresh DB=$(TEST_DB_NAME) =="; \
 	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
 	$(DC) exec -T $(API_SVC) php artisan migrate:fresh --seed --env=testing --force
+
+test-parser:
+	@set -e; \
+	if [ "$(STACK)" = "prod" ]; then \
+	  echo "❌ tests are dev-only; do not run on prod"; \
+	  exit 2; \
+	fi; \
+	echo "== STACK=$(STACK) | test-parser (sqlite in-memory) =="; \
+	$(DC) exec -T -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: $(PARSER_CLI_SVC) php artisan test $(if $(FILTER),--filter="$(FILTER)",)
 
 # -----------------------------
 # Docker: диск / GC
