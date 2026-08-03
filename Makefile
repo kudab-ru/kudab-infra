@@ -336,6 +336,9 @@ test-fresh: test-db-init
 	$(DC) exec -T $(API_SVC) php artisan config:clear --env=testing; \
 	$(DC) exec -T $(API_SVC) php artisan migrate:fresh --seed --env=testing --force
 
+# CACHE_STORE=array пробрасывается вместе с DB_*: переменные окружения контейнера
+# сильнее <env> из phpunit.xml, а там стоит CACHE_STORE=database — и тесты, трогающие
+# кэш (PhpMergeCounters), падали на «no such table: cache» в sqlite-памяти.
 test-parser:
 	@set -e; \
 	if [ "$(STACK)" = "prod" ]; then \
@@ -343,7 +346,7 @@ test-parser:
 	  exit 2; \
 	fi; \
 	echo "== STACK=$(STACK) | test-parser (sqlite in-memory) =="; \
-	$(DC) exec -T -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: $(PARSER_CLI_SVC) php artisan test $(if $(FILTER),--filter="$(FILTER)",)
+	$(DC) exec -T -e DB_CONNECTION=sqlite -e DB_DATABASE=:memory: -e CACHE_STORE=array $(PARSER_CLI_SVC) php artisan test $(if $(FILTER),--filter="$(FILTER)",)
 
 # -----------------------------
 # Docker: диск / GC
