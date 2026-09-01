@@ -1,1 +1,17 @@
 * text eol=lf
+
+# Бинарники нормализовать нельзя: правило выше применялось ко ВСЕМ файлам,
+# и git собирался править переводы строк внутри PNG. Любая картинка, шрифт или
+# архив, попавшие в репозиторий, тихо ломались бы при коммите.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+*.gz binary
