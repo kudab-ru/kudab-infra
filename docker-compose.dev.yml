@@ -6,6 +6,9 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
       BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN}
+      # Поимённо: у kudab-api-scheduler нет env_file, и без этой строки
+      # автонаполнение продолжало бы отбивать даже разрешённый канал.
+      KUDAB_DEV_BROADCAST_CHAT_IDS: ${KUDAB_DEV_BROADCAST_CHAT_IDS:-}
     volumes:
       - ./services/kudab-api:/var/www/html:rw
       - ./services/kudab-api/vendor:/var/www/html/vendor
@@ -14,6 +17,9 @@ services:
   kudab-api-scheduler:
     environment:
       BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN}
+      # Поимённо: у kudab-api-scheduler нет env_file, и без этой строки
+      # автонаполнение продолжало бы отбивать даже разрешённый канал.
+      KUDAB_DEV_BROADCAST_CHAT_IDS: ${KUDAB_DEV_BROADCAST_CHAT_IDS:-}
 
   kudab-parser:
     environment:
