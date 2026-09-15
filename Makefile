@@ -924,8 +924,11 @@ bot-rebuild:
 bot-build-prod:
 	$(PROD) build kudab-bot
 
+# Вместе с cron-контейнером: он делит с ботом образ, и без второй строки
+# доставка постов продолжает крутить старый код — в dev это ровно та же
+# путаница «поправил, а поведение прежнее», что и на проде.
 bot-restart:
-	$(DEV) up -d --no-deps kudab-bot
+	$(DEV) up -d --no-deps kudab-bot kudab-bot-cron
 
 bot-logs:
 	$(COMPOSE) logs -f --tail=200 kudab-bot
@@ -974,9 +977,15 @@ snapshot-parser:
 	./tools/snapshot_kudab.sh kudab-parser
 
 # --- PROD: быстрый деплой только бота ---
+#
+# kudab-bot-cron ОБЯЗАТЕЛЕН в каждой цели деплоя бота. Он делит с ботом образ
+# (image: kudab-bot:latest), поэтому сборка его обновляет, а вот пересоздать
+# контейнер некому: `up -d --no-deps kudab-bot` трогает только сам бот. Без
+# второй строки доставка постов продолжает крутить СТАРЫЙ слой, и увидеть это
+# нельзя ничем — версия в логах не печатается, health отвечает бодро.
 bot-apply-prod:
 	$(PROD) build kudab-bot
-	$(PROD) up -d --no-deps kudab-bot
+	$(PROD) up -d --no-deps kudab-bot kudab-bot-cron
 
 # --- PROD: diag/health изнутри контейнера ---
 bot-health-prod:
@@ -991,11 +1000,26 @@ bot-diag-prod:
 # --- PROD: перезалить вебхук ---
 webhook-refresh: webhook-del webhook-set
 
+# Перезалить вебхук ТОЛЬКО если бот в вебхук-режиме.
+#
+# Режим задаётся BOT_MODE и по умолчанию polling (app/core/settings.py:129).
+# В polling-режиме установленный вебхук отбирает у getUpdates все обновления —
+# бот перестаёт отвечать, причём после успешного релиза и без единой ошибки.
+# Спрашиваем сам контейнер, а не .env: он единственный знает, с чем запущен.
+webhook-refresh-if-webhook:
+	@mode=$$($(PROD) exec -T kudab-bot printenv BOT_MODE 2>/dev/null | tr -d '\r' || true); \
+	if [ "$$mode" = "webhook" ]; then \
+	  echo "BOT_MODE=webhook — перезаливаю вебхук"; \
+	  $(MAKE) webhook-refresh; \
+	else \
+	  echo "BOT_MODE=$${mode:-polling} — вебхук не трогаю (в polling он отберёт обновления у getUpdates)"; \
+	fi
+
 # --- Быстрый релиз под prod ---
 bot-release:
 	$(PROD) build kudab-bot
-	$(PROD) up -d --no-deps kudab-bot
-	$(MAKE) webhook-refresh
+	$(PROD) up -d --no-deps kudab-bot kudab-bot-cron
+	$(MAKE) webhook-refresh-if-webhook
 	$(MAKE) bot-diag-prod
 
 # --- Nginx ---
