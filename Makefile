@@ -228,14 +228,21 @@ prod-pull:
 	$(MAKE) mods-status || true
 
 prod-deploy: prod-pull
-	@echo "==> [1/4] Build & up containers..."
+	@echo "==> [1/5] Build & up containers..."
 	$(PROD) up -d --build --remove-orphans --force-recreate
-	@echo "==> [2/4] Waiting for DB to be ready (5s)..."
+	@echo "==> [2/5] Waiting for DB to be ready (5s)..."
 	@sleep 5
-	@echo "==> [3/4] Schema migrations (kudab-api)..."
+	@echo "==> [3/5] Schema migrations (kudab-api)..."
 	$(PROD) exec -T $(API_SVC) php artisan migrate --force || \
 		(echo "❌ migrate FAILED. Deploy прерван — данные могут быть несинхронны со схемой."; exit 1)
-	@echo "==> [4/4] One-shot data-tasks (kudab-parser, idempotent)..."
+	@echo "==> [4/5] Связь «пост → события» (анти-дубли рассылки)..."
+	@# Миграция создаёт таблицу связи ПУСТОЙ, а все четыре слоя анти-дублей уже
+	@# читают её. Между migrate и заполнением защита от повторов не видит ни
+	@# одного занятого события — канал начал бы повторять опубликованное молча
+	@# и без единой ошибки. Поэтому шаг деплоя, а не строчка в инструкции.
+	$(PROD) exec -T $(API_SVC) php artisan broadcast:links:backfill || \
+		(echo "❌ links:backfill FAILED. НЕ ОСТАВЛЯЙТЕ ТАК: анти-дубли рассылки слепы, пока связь пуста."; exit 1)
+	@echo "==> [5/5] One-shot data-tasks (kudab-parser, idempotent)..."
 	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks || \
 		(echo "❌ deploy:run-once-tasks FAILED. Запустите `make prod-deploy-tasks-status` для диагностики."; exit 1)
 	$(MAKE) docker-gc || true
