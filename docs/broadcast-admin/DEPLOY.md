@@ -12,10 +12,15 @@
 
 | подмодуль | пин | ветка |
 |---|---|---|
-| kudab-api | `4609e60` | `feat/venue-page-rebuild` |
-| kudab-admin | `3a99bdc` | `main` |
+| kudab-api | `2c05998` | `feat/venue-page-rebuild` |
+| kudab-admin | `724f940` | `main` |
 | kudab-parser | `71e5ddc` | `main` |
 | kudab-bot | `de5245c` | `main` |
+
+Пины сверять перед выкаткой (`git submodule status`), а не верить таблице:
+она стареет с каждым коммитом.
+
+Новых миграций в последних партиях НЕТ — всё, что ниже, приехало раньше.
 
 **Шесть миграций**, все аддитивные (новые nullable-колонки и две новые
 таблицы), блокировок на горячей таблице нет:
@@ -119,7 +124,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-ap
 
 # 4.2 Новые команды в расписании
 docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
-  php artisan schedule:list | grep -E "fill-feed|sweep-queue|collect-clicks|enqueue-digests"
+  php artisan schedule:list | grep -E "fill-feed|sweep-queue|collect-clicks|enqueue-digests|prepare-digests"
 
 # 4.3 Что сделает наполнитель — БЕЗ записи
 docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-api \
