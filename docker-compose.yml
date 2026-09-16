@@ -188,6 +188,11 @@ services:
     image: kudab-admin:latest
     build: ./services/kudab-admin
     container_name: ${KUDAB_ADMIN_CONTAINER:-kudab-admin}
+    # Политики перезапуска здесь не было ни в базе, ни в prod-overlay — у
+    # ЕДИНСТВЕННОГО интерфейса, через который владелец правит ленту. Упал
+    # процесс или перезагрузился хост — админка не поднимается сама, а канал
+    # тем временем продолжает постить: заметить нечем.
+    restart: unless-stopped
     env_file: .env
     environment:
       # SSR-фетч из admin'а на api идёт через nginx внутри docker-сети
