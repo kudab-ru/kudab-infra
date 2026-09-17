@@ -75,6 +75,22 @@ export async function shutdownBrowser() {
   }
 }
 
+/**
+ * Запрос в счётчик Метрики — см. `analyticsHostSuffixes` в config.js: рендер
+ * собственных страниц не должен попадать в статистику сайта.
+ */
+function isAnalyticsRequest(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return config.analyticsHostSuffixes.some(
+    (suffix) => host === suffix || host.endsWith('.' + suffix),
+  );
+}
+
 export function currentLoad() {
   return { active: activeRenders, max: config.maxConcurrentRenders };
 }
@@ -114,6 +130,9 @@ export async function render(req) {
   await page.route('**/*', (route) => {
     const t = route.request().resourceType();
     if (t === 'image' || t === 'media' || t === 'font') {
+      return route.abort();
+    }
+    if (isAnalyticsRequest(route.request().url())) {
       return route.abort();
     }
     return route.continue();
