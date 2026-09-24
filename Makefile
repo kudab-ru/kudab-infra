@@ -20,6 +20,7 @@ HZ_SVC          ?= kudab-horizon
 API_SVC         ?= kudab-api
 DB_SVC          ?= kudab-db
 PARSER_CLI_SVC  ?= kudab-parser
+HEADLESS_SVC    ?= kudab-headless
 BOT_SVC         ?= kudab-bot
 
 # --- Tests (pgsql) -----------------------------------------------------------
@@ -228,34 +229,58 @@ prod-pull:
 	$(MAKE) mods-status || true
 
 prod-deploy: prod-pull
-	@echo "==> [1/6] Схема вперёд кода (best-effort)..."
+	@echo "==> [1/7] Схема вперёд кода (best-effort)..."
 	@# Каталог api примонтирован в контейнер на запись, поэтому новый код стал
 	@# боевым ещё на prod-pull, а колонок под него в базе нет: ручки с явным
 	@# SQL-select (/api/admin/venues с v.parent_id) отдают 500 всё время сборки,
 	@# и это единственный интерфейс владельца. Поэтому миграции идут ДО
 	@# пересборки. Шаг необязательный: на первом запуске контейнера ещё нет —
-	@# тогда схему накатит обязательный шаг [4/6], он же поймает ошибку.
+	@# тогда схему накатит обязательный шаг [4/7], он же поймает ошибку.
 	-$(PROD) exec -T $(API_SVC) php artisan migrate --force
-	@echo "==> [2/6] Build & up containers..."
+	@echo "==> [2/7] Build & up containers..."
 	$(PROD) up -d --build --remove-orphans --force-recreate
-	@echo "==> [3/6] Waiting for DB to be ready (5s)..."
+	@echo "==> [3/7] Waiting for DB to be ready (5s)..."
 	@sleep 5
-	@echo "==> [4/6] Schema migrations (kudab-api)..."
+	@echo "==> [4/7] Schema migrations (kudab-api)..."
 	$(PROD) exec -T $(API_SVC) php artisan migrate --force || \
 		(echo "❌ migrate FAILED. Deploy прерван — данные могут быть несинхронны со схемой."; exit 1)
-	@echo "==> [5/6] Связь «пост → события» (анти-дубли рассылки)..."
+	@echo "==> [5/7] Связь «пост → события» (анти-дубли рассылки)..."
 	@# Миграция создаёт таблицу связи ПУСТОЙ, а все четыре слоя анти-дублей уже
 	@# читают её. Между migrate и заполнением защита от повторов не видит ни
 	@# одного занятого события — канал начал бы повторять опубликованное молча
 	@# и без единой ошибки. Поэтому шаг деплоя, а не строчка в инструкции.
 	$(PROD) exec -T $(API_SVC) php artisan broadcast:links:backfill || \
 		(echo "❌ links:backfill FAILED. НЕ ОСТАВЛЯЙТЕ ТАК: анти-дубли рассылки слепы, пока связь пуста."; exit 1)
-	@echo "==> [6/6] One-shot data-tasks (kudab-parser, idempotent)..."
+	@echo "==> [6/7] One-shot data-tasks (kudab-parser, idempotent)..."
 	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks || \
 		(echo "❌ deploy:run-once-tasks FAILED. Запустите `make prod-deploy-tasks-status` для диагностики."; exit 1)
+	@echo "==> [7/7] Рендер работает на СВЕЖЕМ образе..."
+	@# Исходники kudab-headless в контейнер НЕ монтируются — он живёт из
+	@# образа. Шаг [2/7] его пересобирает, но выкат отдельных служб
+	@# (`up -d kudab-api kudab-parser`) образ не трогает, и рендер молча
+	@# остаётся старым. Тогда ломается не сборка, а данные: страницы
+	@# отдаются срезом тегов вместо видимого текста, и сайт со скрытыми
+	@# стилями разделами собирает первый попавшийся месяц вместо нужного.
+	@# Источник при этом рапортует «ok». За один вечер на это наступили
+	@# дважды, поэтому проверка тут, а не в инструкции.
+	$(MAKE) prod-headless-check
 	$(MAKE) docker-gc || true
 	@echo ""
 	@echo "✅ Deploy complete."
+
+# Проба рендера: умеет ли он отдавать видимый текст. Отдельной целью —
+# чтобы дёргать и без полного выката, после ручной пересборки.
+prod-headless-check:
+	@$(PROD) exec -T $(HEADLESS_SVC) sh -lc "curl -s --max-time 30 -X POST http://127.0.0.1:8080/render \
+		-H 'Content-Type: application/json' \
+		-d '{\"url\":\"http://kudab-nginx/api/web/ping\",\"wait_for\":\"selector\",\"wait_selector\":\"body\",\"timeout_ms\":15000,\"want_text\":true}'" \
+		| grep -q '"visible_text"' || \
+		(echo ""; \
+		 echo "❌ Рендер работает на СТАРОМ образе: в ответе нет visible_text."; \
+		 echo "   Сайты со скрытыми стилями разделами будут собираться неверно, и МОЛЧА."; \
+		 echo "   Лечится: $(PROD) build $(HEADLESS_SVC) && $(PROD) up -d --no-build --force-recreate $(HEADLESS_SVC)"; \
+		 exit 1)
+	@echo "   рендер свежий: visible_text отдаётся"
 
 # Запуск только one-shot data-tasks отдельно (не пересобирая контейнеры).
 # Удобно если нужно перепроиграть конкретный task после фикса.
