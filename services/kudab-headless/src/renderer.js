@@ -206,21 +206,40 @@ export async function render(req) {
     // Мелкое и логотипы отсекаем здесь же: иконки, кнопки соцсетей и шапка
     // сайта событиями не являются, а тащить их через полсистемы, чтобы
     // отбросить в конце, незачем.
+    // Картинки страницы вместе с ТЕКСТОМ ИХ БЛОКА.
+    //
+    // Блок — ближайший предок, в тексте которого есть время («19:00»): в
+    // листинге это ровно карточка одного показа, и в ней лежат и дата, и
+    // название, и постер. По блоку картинка ложится на своё событие.
+    //
+    // Почему не по alt: он есть далеко не везде и заполняется как попало —
+    // у театра оперы и балета в alt половины картинок стоит «По пушкинской
+    // карте». Текст блока есть у любого листинга по устройству вёрстки.
+    //
+    // Без блока картинка бесполезна: вложения поста уходят ВСЕМ его
+    // событиям разом, и в месячном листинге каждый спектакль получил бы
+    // постеры всего месяца.
     const images = req.wantText
       ? await page.evaluate(() => {
+          const TIME = /\b\d{1,2}:\d{2}\b/;
           const out = [];
           document.querySelectorAll('img').forEach((im) => {
-            // Отбираем по ПОДПИСИ, а не по размеру: рендер не ждёт раскладки,
-            // и getBoundingClientRect у ленивых картинок отдаёт нули — фильтр
-            // по геометрии выбрасывал разом всё. Пустой alt у декоративных
-            // картинок и так пуст, этого хватает.
             const src = im.currentSrc || im.src || im.dataset.src || '';
             if (!src || /logo|sprite|icon|placeholder|blank|spacer/i.test(src)) return;
-            const alt = (im.alt || im.title || '').trim();
-            if (alt === '' || alt.length < 3) return;
-            out.push({ src, alt: alt.slice(0, 200) });
+
+            let node = im.parentElement;
+            let block = '';
+            for (let i = 0; i < 10 && node; i++) {
+              const t = (node.innerText || '').replace(/\s+/g, ' ').trim();
+              if (t.length > 1500) break;
+              if (TIME.test(t)) { block = t; break; }
+              node = node.parentElement;
+            }
+            if (block === '') return;
+
+            out.push({ src, alt: (im.alt || '').trim().slice(0, 200), block: block.slice(0, 700) });
           });
-          return out.slice(0, 60);
+          return out.slice(0, 80);
         })
       : null;
 
