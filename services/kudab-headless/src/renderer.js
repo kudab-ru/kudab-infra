@@ -198,6 +198,32 @@ export async function render(req) {
       ? await page.evaluate(() => (document.body ? document.body.innerText : ''))
       : null;
 
+    // Картинки страницы с подписями. Нужны листингам: у театра оперы и балета
+    // в alt каждого постера стоит РОВНО название спектакля («Трубадур»,
+    // «Ромео и Джульетта»), и по нему картинка ложится на своё событие.
+    // Без подписи 21 картинка листинга ушла бы всем его событиям разом.
+    //
+    // Мелкое и логотипы отсекаем здесь же: иконки, кнопки соцсетей и шапка
+    // сайта событиями не являются, а тащить их через полсистемы, чтобы
+    // отбросить в конце, незачем.
+    const images = req.wantText
+      ? await page.evaluate(() => {
+          const out = [];
+          document.querySelectorAll('img').forEach((im) => {
+            // Отбираем по ПОДПИСИ, а не по размеру: рендер не ждёт раскладки,
+            // и getBoundingClientRect у ленивых картинок отдаёт нули — фильтр
+            // по геометрии выбрасывал разом всё. Пустой alt у декоративных
+            // картинок и так пуст, этого хватает.
+            const src = im.currentSrc || im.src || im.dataset.src || '';
+            if (!src || /logo|sprite|icon|placeholder|blank|spacer/i.test(src)) return;
+            const alt = (im.alt || im.title || '').trim();
+            if (alt === '' || alt.length < 3) return;
+            out.push({ src, alt: alt.slice(0, 200) });
+          });
+          return out.slice(0, 60);
+        })
+      : null;
+
     const finalUrl = page.url();
     const httpStatus = resp ? resp.status() : null;
 
@@ -223,6 +249,7 @@ export async function render(req) {
       ...(typeof outText === 'string'
         ? { visible_text: outText, visible_text_truncated: textTruncated }
         : {}),
+      ...(Array.isArray(images) ? { images } : {}),
       final_url: finalUrl,
       http_status: httpStatus,
       took_ms: Date.now() - startedAt,
