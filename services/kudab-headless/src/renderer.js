@@ -185,6 +185,19 @@ export async function render(req) {
     }
 
     const html = await page.content();
+
+    // Видимый текст — только по запросу: лишний evaluate на каждый обход
+    // не нужен, а тем, кто отдаёт страницу модели, он необходим.
+    //
+    // ЗАЧЕМ. Сайты вроде theatre-vrn.ru держат В РАЗМЕТКЕ все месяцы сразу и
+    // показывают нужный стилями. Срез тегов по всему документу берёт первый
+    // попавшийся месяц, и страница октября отдаёт сентябрьские даты: 207707
+    // байт разметки одинаковы для обеих страниц, а innerText — 2825 знаков с
+    // сентябрём против 5078 с октябрём. Источник при этом рапортует «ok».
+    const visibleText = req.wantText
+      ? await page.evaluate(() => (document.body ? document.body.innerText : ''))
+      : null;
+
     const finalUrl = page.url();
     const httpStatus = resp ? resp.status() : null;
 
@@ -195,11 +208,21 @@ export async function render(req) {
       truncated = true;
     }
 
+    let outText = visibleText;
+    let textTruncated = false;
+    if (typeof outText === 'string' && outText.length > config.maxHtmlBytes) {
+      outText = outText.slice(0, config.maxHtmlBytes);
+      textTruncated = true;
+    }
+
     return {
       status: 'ok',
       html: outHtml,
       html_bytes: html.length,
       truncated,
+      ...(typeof outText === 'string'
+        ? { visible_text: outText, visible_text_truncated: textTruncated }
+        : {}),
       final_url: finalUrl,
       http_status: httpStatus,
       took_ms: Date.now() - startedAt,

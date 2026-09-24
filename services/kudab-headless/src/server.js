@@ -62,6 +62,7 @@ app.post('/render', async (req, res) => {
       timeoutMs: body.timeout_ms,
       userAgent: body.user_agent,
       viewport: body.viewport,
+      wantText: body.want_text === true,
     });
     return res.json(result);
   } catch (err) {
