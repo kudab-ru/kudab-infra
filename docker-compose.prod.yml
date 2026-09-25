@@ -10,7 +10,11 @@ services:
 
   kudab-api-scheduler:
     image: ${API_IMAGE:-kudab-api}
-    command: sh -lc 'while true; do php artisan schedule:run --no-interaction; sleep 60; done'
+    # schedule:work, а не самодельный цикл: тот ждёт КОНЦА прогона и только
+    # потом отсчитывает минуту, поэтому минутные задачи уезжали тем дальше,
+    # чем дольше шёл прогон. Замер прод-сессии: около получаса расписания в
+    # сутки теряется, а две ночные задачи не запускались ни разу.
+    command: php artisan schedule:work --no-interaction
     restart: always
     env_file:
       - ./services/kudab-api/.env
@@ -75,7 +79,8 @@ services:
 
   kudab-parser-scheduler:
     image: ${PARSER_IMAGE:-kudab-parser}
-    command: sh -lc 'while true; do php artisan schedule:run --no-interaction; sleep 60; done'
+    # То же, что у api: см. комментарий выше.
+    command: php artisan schedule:work --no-interaction
     restart: always
     env_file:
       - ./services/kudab-parser/.env
