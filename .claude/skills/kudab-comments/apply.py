@@ -10,6 +10,8 @@ import importlib.util
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 
 ROOT = '/home/maks/projects/kudab-infra/'
@@ -25,6 +27,28 @@ TAG_RE = re.compile(r'@(dataProvider|test|depends|group|covers\w*|before\w*|afte
 TYPE_TAGS = re.compile(r'^(return|var|throws|template\w*|property\w*|method|extends|implements|mixin|phpstan-[\w-]+|psalm-[\w-]+|deprecated)$')
 DIRECTIVE_RE = re.compile(r'eslint-disable|eslint-enable|prettier-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck|'
                           r'phpcs:|noqa|type:\s*ignore|pragma|webpackChunkName|istanbul ignore|c8 ignore|#region|#endregion')
+
+
+PHP_TOKENS = r"""
+$out = [];
+foreach (token_get_all(stream_get_contents(STDIN)) as $t) {
+    if (is_array($t)) {
+        if (in_array($t[0], [T_COMMENT, T_DOC_COMMENT, T_WHITESPACE], true)) continue;
+        $out[] = token_name($t[0]) . ':' . $t[1];
+    } else {
+        $out[] = $t;
+    }
+}
+echo md5(implode("\n", $out));
+"""
+
+
+def php_signature(text):
+    """Отпечаток PHP-токенов без комментариев: ловит правки внутри heredoc, SQL и строк."""
+    if not shutil.which('php'):
+        return None
+    r = subprocess.run(['php', '-r', PHP_TOKENS], input=text, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else 'ошибка разбора'
 
 
 def code_lines(text, ext):
@@ -129,15 +153,20 @@ def main():
             skipped += len(items)
             continue
         start = text
+        sig = php_signature(text) if ext == '.php' else None
+        applied = 0
         for m in items:
             new, why = apply_one(text, m['before'], m.get('after', ''), ext)
+            if why is None and sig is not None and php_signature(new) != sig:
+                why = 'меняет PHP-токены (строка, heredoc или SQL)'
             if why:
                 first = m['before'].strip().split('\n')[0][:70]
                 print(f'ПРОПУСК {os.path.relpath(path, ROOT)}: {why} | {first}')
                 skipped += 1
                 continue
             text = new
-            done += 1
+            applied += 1
+        done += applied
         if text != start:
             removed += start.count('\n') - text.count('\n')
             if not args.dry_run:
