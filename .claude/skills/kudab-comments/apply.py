@@ -17,10 +17,12 @@ spec = importlib.util.spec_from_file_location('guard', os.path.join(ROOT, '.clau
 guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guard)
 
-# теги, от которых зависит поведение: PHPUnit, PHPStan, Swagger, линтеры
+# теги, от которых зависит поведение: PHPUnit, PHPStan, Swagger. Тип у @param/@return
+# поправить можно, потерять сам тег или переименовать параметр нельзя
 TAG_RE = re.compile(r'@(dataProvider|test|depends|group|covers\w*|before\w*|after\w*|requires|runInSeparateProcess|'
                     r'preserveGlobalState|backupGlobals|OA\\\w+|ORM\\\w+|param|return|var|throws|template\w*|'
-                    r'property\w*|method|extends|implements|mixin|phpstan-[\w-]+|psalm-[\w-]+|deprecated)\b\s*(\S*)')
+                    r'property\w*|method|extends|implements|mixin|phpstan-[\w-]+|psalm-[\w-]+|deprecated)\b(.*)')
+TYPE_TAGS = re.compile(r'^(return|var|throws|template\w*|property\w*|method|extends|implements|mixin|phpstan-[\w-]+|psalm-[\w-]+|deprecated)$')
 DIRECTIVE_RE = re.compile(r'eslint-disable|eslint-enable|prettier-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck|'
                           r'phpcs:|noqa|type:\s*ignore|pragma|webpackChunkName|istanbul ignore|c8 ignore|#region|#endregion')
 
@@ -36,10 +38,28 @@ def protected(text, ext):
         if item is None:
             continue
         for m in TAG_RE.finditer(line):
-            tags[(m.group(1), m.group(2))] += 1
+            tag, rest = m.group(1), m.group(2)
+            if tag == 'param':
+                var = re.search(r'\$\w+', rest)
+                tags[(tag, var.group(0) if var else '')] += 1
+            elif TYPE_TAGS.match(tag):
+                tags[(tag,)] += 1
+            else:
+                tags[(tag, rest.split()[0] if rest.split() else '')] += 1
         if DIRECTIVE_RE.search(line):
             tags[('directive', line.strip())] += 1
     return tags
+
+
+def line_hits(text, before):
+    """Вхождения before, которые начинаются с начала строки и кончаются её концом."""
+    hits, i = [], text.find(before)
+    while i != -1:
+        end = i + len(before)
+        if (i == 0 or text[i - 1] == '\n') and (end == len(text) or text[end] == '\n' or before.endswith('\n')):
+            hits.append(i)
+        i = text.find(before, i + 1)
+    return hits
 
 
 def loose_match(text, before, after):
@@ -64,18 +84,19 @@ def loose_match(text, before, after):
 def apply_one(text, before, after, ext):
     if not before.strip():
         return None, 'пустой before'
-    n = text.count(before)
-    if n == 0:
+    hits = line_hits(text, before)
+    if not hits:
         real, adjusted = loose_match(text, before, after)
         if real is not None:
             before, after = real, adjusted
-            n = 1
-    if n != 1:
-        return None, f'before найден {n} раз'
-    if after == '' and text.count(before + '\n') == 1:
-        new = text.replace(before + '\n', '', 1)
-    else:
-        new = text.replace(before, after, 1)
+            hits = line_hits(text, before)
+    if len(hits) != 1:
+        return None, f'before найден {len(hits)} раз'
+    i = hits[0]
+    end = i + len(before)
+    if after == '' and not before.endswith('\n') and text[end:end + 1] == '\n':
+        end += 1
+    new = text[:i] + after + text[end:]
     if code_lines(new, ext) != code_lines(text, ext):
         return None, 'задевает код'
     if protected(new, ext) != protected(text, ext):
