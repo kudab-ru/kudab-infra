@@ -76,6 +76,56 @@ def caps_hit(body):
     return None
 
 
+JARGON_MAX = 2  # очков жаргона на комментарий
+LATIN_OK = set("""
+sql api apis url urls uri json http https html css scss utc id ids null true false php vk tg ssr seo csv pdf
+js ts vue nuxt laravel postgres postgresql postgis redis docker telegram dadata osm openai anthropic claude gpt
+yandex nginx cron git utm ios android safari chrome firefox webp png jpeg jpg svg gif utf xml rss dns ip ttl md5
+sha1 uuid todo ok ms px rem vh vw kudab qtickets ticketscloud btickets instagram youtube google metrika horizon
+eloquent carbon phpunit pint phpstan larastan tailwind regex pcre ascii iso rfc http2 cdn ssl tls jwt oauth
+sqlite pgsql select insert update delete join where limit order group distinct
+json-ld jsonld pecl phpredis composer npm xdebug iso8601 opcache supervisor playwright chromium markdown
+""".split())
+TRANSLIT_JARGON = re.compile(
+    r'(?<![а-яё])(поллер\w*|клейм\w*|айтем\w*|фол+бэк\w*|бэкфил+\w*|промоут\w*|рескор\w*|ретра[йи]\w*|'
+    r'чанк\w*|батч\w*|пейлоад\w*|хэндлер\w*|лиз[аеуы]?|дедуп\w*|скоуп\w*|рейл\w*|кэп\b|гейт\w*|'
+    r'апсерт\w*|инвалид\w*|линк\w*)(?![а-яё])', re.I)
+WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9_$@\\:.\->'’]+")
+
+
+def jargon_hits(text):
+    """Английские слова, кальки и смесь латиницы с кириллицей; имена из кода не в счёт."""
+    t = re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»|“[^”]*”', ' ', text)
+    hits = []
+    for m in WORD_RE.finditer(t):
+        w = m.group(0).strip(".:,;-'’>")
+        nxt = t[m.end():m.end() + 1]
+        prv = t[m.start() - 1:m.start()] if m.start() else ''
+        if not w:
+            continue
+        lat = re.search(r'[A-Za-z]', w)
+        cyr = re.search(r'[А-Яа-яЁё]', w)
+        if lat and cyr:
+            hits.append((w, 2))
+            continue
+        if cyr:
+            if TRANSLIT_JARGON.fullmatch(w):
+                hits.append((w, 1))
+            continue
+        if not lat:
+            continue
+        if nxt in ('(', '/') or prv == '/' or re.search(r"[_0-9$@\\]|::|->|\.|:", w) or re.search(r'[a-z][A-Z]', w):
+            continue
+        if w.lower() in LATIN_OK:
+            continue
+        if re.fullmatch(r'[A-Z][a-z]+', w):
+            continue
+        if len(w) == 1:
+            continue
+        hits.append((w, 2 if '-' in w else 1))
+    return hits
+
+
 def comment_lines(text, ext):
     """На каждую строку: (вид, текст) для комментария или None для кода. Вид: line | doc."""
     out = []
@@ -181,6 +231,10 @@ def check(old, new, ext, line_offset=0):
             what = 'докблок' if is_doc else 'комментарий'
             size = f'{len(texts)} строк' if len(texts) > lim else f'{total} знаков'
             problems.append((texts[0][0], f'{what} на {size} (предел {lim} строк / {chars} знаков): «{texts[0][1][:60]}…»'))
+        hits = jargon_hits(' '.join(fresh))
+        if sum(w for _, w in hits) >= JARGON_MAX:
+            words = ', '.join(dict.fromkeys(h for h, _ in hits))
+            problems.append((texts[0][0], f'жаргон и англицизмы ({words[:80]}): «{texts[0][1][:60]}…»'))
 
     in_oa = False
     for i, (item, is_added) in enumerate(zip(items, mask)):
@@ -225,7 +279,9 @@ def watched(path):
 RULE = ('Комментарий пишется, только если без него следующий правщик ошибётся: неочевидная причина '
         'или ловушка. Обычный до двух строк, докблок до четырёх. Замеры, даты, историю правки, кто решил '
         'и как нашли — в сообщение коммита, в коде их нет. Пересказ кода удали. Капс, «ровно», «именно», '
-        '«честно», «намеренно» не нужны. Перепиши и повтори правку. Подробно — скилл kudab-comments.')
+        '«честно», «намеренно» не нужны. Пиши простым русским для человека, который не видел кода: без '
+        'жаргона и англицизмов, имя из кода только в обратных кавычках. Перепиши и повтори правку. '
+        'Подробно — скилл kudab-comments.')
 
 
 def hook():
