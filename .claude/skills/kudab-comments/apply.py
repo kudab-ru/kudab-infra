@@ -5,6 +5,7 @@
 после неё те же, служебные теги на месте и сторож не возражает против нового текста.
 """
 import argparse
+import ast
 import collections
 import importlib.util
 import json
@@ -49,6 +50,64 @@ def php_signature(text):
         return None
     r = subprocess.run(['php', '-r', PHP_TOKENS], input=text, capture_output=True, text=True)
     return r.stdout.strip() if r.returncode == 0 else 'ошибка разбора'
+
+
+JS_EXT = {'.ts', '.tsx', '.js', '.mjs', '.cjs', '.vue', '.scss', '.css'}
+SIG_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'signature.cjs')
+
+
+def node_modules_for(path):
+    d = os.path.dirname(path)
+    while d.startswith(ROOT.rstrip('/')):
+        if os.path.isdir(os.path.join(d, 'node_modules', 'typescript')):
+            return os.path.join(d, 'node_modules')
+        d = os.path.dirname(d)
+    return None
+
+
+def js_signature(text, path, ext):
+    """(отпечаток без комментариев, сколько комментариев стоят первым узлом ветки v-if)."""
+    mods = node_modules_for(path)
+    if not mods or not shutil.which('node'):
+        return None
+    r = subprocess.run(['node', SIG_JS, ext, mods], input=text, capture_output=True, text=True)
+    if r.returncode != 0:
+        return ('ошибка разбора', 0)
+    sig, _, bfc = r.stdout.strip().rpartition(' ')
+    return (sig, int(bfc or 0))
+
+
+def py_signature(text):
+    """AST без докстрингов: правка строки или кода меняет отпечаток."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return 'ошибка разбора'
+    for node in ast.walk(tree):
+        body = getattr(node, 'body', None)
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and body \
+                and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            node.body = body[1:] or [ast.Pass()]
+    return ast.dump(tree)
+
+
+def signature(text, path, ext):
+    if ext == '.php':
+        return php_signature(text)
+    if ext == '.py':
+        return py_signature(text)
+    if ext in JS_EXT:
+        return js_signature(text, path, ext)
+    return None
+
+
+def same_signature(old, new):
+    if old is None:
+        return True
+    if isinstance(old, tuple):
+        return new is not None and new[0] == old[0] and new[1] <= old[1]
+    return new == old
 
 
 def code_lines(text, ext):
@@ -153,12 +212,12 @@ def main():
             skipped += len(items)
             continue
         start = text
-        sig = php_signature(text) if ext == '.php' else None
+        sig = signature(text, path, ext)
         applied = 0
         for m in items:
             new, why = apply_one(text, m['before'], m.get('after', ''), ext)
-            if why is None and sig is not None and php_signature(new) != sig:
-                why = 'меняет PHP-токены (строка, heredoc или SQL)'
+            if why is None and sig is not None and not same_signature(sig, signature(new, path, ext)):
+                why = 'меняет код, строку или шаблон (или ставит комментарий первым в ветку v-if)'
             if why:
                 first = m['before'].strip().split('\n')[0][:70]
                 print(f'ПРОПУСК {os.path.relpath(path, ROOT)}: {why} | {first}')
