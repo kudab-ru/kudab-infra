@@ -223,8 +223,10 @@ export async function render(req) {
       ? await page.evaluate(() => {
           const TIME = /\b\d{1,2}:\d{2}\b/;
           const out = [];
-          document.querySelectorAll('img').forEach((im) => {
-            const src = im.currentSrc || im.src || im.dataset.src || '';
+          // Tilda кладёт картинку карточки фоном блока: полный адрес в data-original,
+          // а в src и style лежит размытая миниатюра на 20 пикселей.
+          document.querySelectorAll('img, [data-original]').forEach((im) => {
+            const src = im.dataset.original || im.currentSrc || im.src || im.dataset.src || '';
             if (!src || /logo|sprite|icon|placeholder|blank|spacer/i.test(src)) return;
 
             let node = im.parentElement;
