@@ -24,6 +24,8 @@ services:
   kudab-parser:
     environment:
       APP_ENV: local
+      # модель на стенде только по требованию, окно открывает `make llm-open`; строка нужна всем четырём контейнерам парсера
+      LLM_MODE: on_demand
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -37,6 +39,7 @@ services:
   kudab-parser-fpm:
     environment:
       APP_ENV: local
+      LLM_MODE: on_demand
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -50,12 +53,17 @@ services:
       - ./services/kudab-parser/storage:/var/www/html/storage
     environment:
       APP_ENV: local
+      LLM_MODE: on_demand
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
       REDIS_CLIENT: phpredis
     command: sh -lc "php artisan migrate --force && php artisan optimize:clear && php artisan horizon"
+
+  kudab-parser-scheduler:
+    environment:
+      LLM_MODE: on_demand
 
   kudab-frontend:
     environment:

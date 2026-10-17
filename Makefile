@@ -526,6 +526,25 @@ llm-usage:
 	echo "== STACK=$(STACK) | parser:llm:usage --days=$$DAYS --by=$$BY =="; \
 	$(DC) exec -T $(PARSER_CLI_SVC) php artisan parser:llm:usage --days=$$DAYS --by=$$BY
 
+# Модель на стенде только по требованию: окно со сроком и лимитом в долларах, см. LlmSpendGate в парсере
+llm-status:
+	@$(DC) exec -T $(PARSER_CLI_SVC) php artisan llm:window status
+
+llm-open:
+	@$(DC) exec -T $(PARSER_CLI_SVC) php artisan llm:window open --minutes="$${MINUTES:-60}" --budget="$${BUDGET:-1}" --reason="$${REASON:-}"
+
+llm-close:
+	@$(DC) exec -T $(PARSER_CLI_SVC) php artisan llm:window close
+
+# Копия базы прода на стенд без вызовов модели; адрес сервера — PROD_SSH=user@host или строкой в .env
+stand-pull-prod:
+	@test "$(strip $(STACK))" != "prod" || (echo "❌ только для стенда"; exit 2)
+	@bash scripts/dev/pull-prod-db.sh
+
+stand-db-rollback:
+	@test "$(strip $(STACK))" != "prod" || (echo "❌ только для стенда"; exit 2)
+	@bash scripts/dev/pull-prod-db.sh --rollback
+
 events-quality-address:
 	@set -e; \
 	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; \
