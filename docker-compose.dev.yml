@@ -26,6 +26,7 @@ services:
       APP_ENV: local
       # модель на стенде только по требованию, окно открывает `make llm-open`; строка нужна всем четырём контейнерам парсера
       LLM_MODE: on_demand
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -40,6 +41,7 @@ services:
     environment:
       APP_ENV: local
       LLM_MODE: on_demand
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -54,6 +56,7 @@ services:
     environment:
       APP_ENV: local
       LLM_MODE: on_demand
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
       QUEUE_CONNECTION: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -64,6 +67,7 @@ services:
   kudab-parser-scheduler:
     environment:
       LLM_MODE: on_demand
+      LLM_DAILY_CAP_USD: ${LLM_DAILY_CAP_USD:-5}
 
   kudab-frontend:
     environment:

@@ -17,6 +17,13 @@ SKIP_DATA=(cache cache_locks jobs job_batches failed_jobs sessions personal_acce
 
 pg() { "$DOCKER" exec -i "$DB_CONTAINER" psql -U kudab -d postgres -v ON_ERROR_STOP=1 -q "$@"; }
 
+# на сервере прода такой же контейнер базы: без этой проверки скрипт заменил бы боевую базу
+compose_files=$("$DOCKER" inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$DB_CONTAINER" 2>/dev/null || true)
+case "$compose_files" in
+  *docker-compose.dev.yml*) ;;
+  *) echo "Это не стенд: база поднята не из docker-compose.dev.yml. Отказ."; exit 2 ;;
+esac
+
 swap() { # $1 — какая база станет рабочей, $2 — куда убрать нынешнюю
   pg <<SQL
 ALTER DATABASE $DB WITH ALLOW_CONNECTIONS false;
@@ -60,6 +67,7 @@ if [ -z "$DUMP" ]; then
   ssh "$PROD_SSH" "cd $PROD_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T kudab-db pg_dump -U kudab -Fc$excl kudab" > "$DUMP"
 fi
 [ -s "$DUMP" ] || { echo "Дамп пустой или не найден: $DUMP"; exit 1; }
+ls -1t backups/prod_*.dump 2>/dev/null | tail -n +4 | xargs -r rm -- # три последних дампа, остальные место не занимают
 echo "Дамп: $DUMP ($(du -h "$DUMP" | cut -f1))"
 
 if [ "${YES:-0}" != "1" ]; then
@@ -73,6 +81,14 @@ if ! "$DOCKER" exec -i "$DB_CONTAINER" pg_restore -U kudab -d "${DB}_restore" --
   echo "pg_restore сообщил об ошибках — рабочая база не тронута, временную ${DB}_restore можно осмотреть"
   exit 1
 fi
+
+echo "Гашу недоделанную работу прода: на стенде её никто не заказывал, а окно модели она бы съела…"
+"$DOCKER" exec -i "$DB_CONTAINER" psql -U kudab -d "${DB}_restore" -v ON_ERROR_STOP=1 -q <<'SQL'
+UPDATE llm_jobs SET status = 'failed', retry_at = NULL, finished_at = now(), error_message = 'отменено: копия с прода'
+ WHERE status IN ('pending', 'processing');
+UPDATE outbox_messages SET status = 'failed' WHERE status NOT IN ('done', 'failed');
+UPDATE source_probe_requests SET status = 'failed' WHERE status NOT IN ('done', 'failed');
+SQL
 
 echo "Меняю базы местами…"
 swap "${DB}_restore" "${DB}_prev"
