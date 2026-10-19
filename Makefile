@@ -254,6 +254,11 @@ prod-deploy: prod-pull
 	@echo "==> [6/7] One-shot data-tasks (kudab-parser, idempotent)..."
 	$(PROD) exec -T $(PARSER_CLI_SVC) php artisan parser:deploy:run-once-tasks || \
 		(echo "❌ deploy:run-once-tasks FAILED. Запустите `make prod-deploy-tasks-status` для диагностики."; exit 1)
+	@echo "    «Как попасть» на сайте и выходные дни музеев (kudab-api)..."
+	@# Без этого до часа после выката фильтр «Как попасть» на сайте пуст. Идёт после задач
+	@# парсера: они вписывают выходные музеев и меняют виды площадок.
+	-$(PROD) exec -T $(API_SVC) php artisan events:access:refresh
+	-$(PROD) exec -T $(API_SVC) php artisan events:hide-closed-days
 	@echo "==> [7/7] Рендер работает на СВЕЖЕМ образе..."
 	@# Исходники kudab-headless в контейнер НЕ монтируются — он живёт из
 	@# образа. Шаг [2/7] его пересобирает, но выкат отдельных служб
