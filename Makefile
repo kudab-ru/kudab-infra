@@ -225,7 +225,8 @@ prod-pull:
 	echo "== git: sync/update submodules =="; \
 	git submodule sync --recursive; \
 	git submodule update --init --recursive; \
-	echo "✅ prod-pull DONE"; \
+	echo "✅ prod-pull DONE"
+	@# отдельной строкой: строку с вложенным make команда make -n всё равно выполняет, и пробный прогон сбрасывал бы дерево
 	$(MAKE) mods-status || true
 
 prod-deploy: prod-pull
