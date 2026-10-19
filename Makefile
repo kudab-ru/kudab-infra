@@ -72,7 +72,7 @@ REINDEX_VERIFY_LIMIT         ?= 20
 REINDEX_EVENTS_EXTRACT_LIMIT ?= 2000
 REINDEX_POSTS_MIN            ?= $(SMOKE_POSTS_MIN)
 
-.PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup fix-port-conflict
+.PHONY: help init dev prod prod-service down rebuild logs ps migrate migrate-prod rollback backup coverage fix-port-conflict
 .PHONY: errors parsing-errors outbox-retry community-links url-classify
 .PHONY: llm-usage
 .PHONY: docker-df docker-gc docker-gc-volumes
@@ -413,6 +413,10 @@ rollback:
 
 backup:
 	bash scripts/backup_db.sh
+
+# Каких событий ближайшей недели нет у нас, а у чужих афиш есть. Отчёт — в `notes/coverage`.
+coverage:
+	python3 -I scripts/coverage_audit.py $(if $(START),--start $(START))
 
 # -----------------------------
 # Posts: refresh (enqueue fetch posts)
