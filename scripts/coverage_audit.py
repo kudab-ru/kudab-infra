@@ -177,12 +177,17 @@ def nearbee(days):
         addr = e.get('address') or ''
         if cats & NEARBEE_SKIP or 'Москва' in addr:
             continue
-        dates = set()
+        dates, times = set(), {}
         for s in e.get('sessions') or []:
             a = dt.datetime.fromisoformat(s['startDate'].replace('Z', '+00:00'))
             b = dt.datetime.fromisoformat((s.get('endDate') or s['startDate']).replace('Z', '+00:00'))
+            # день без часа NearBee отдаёт до следующей полуночи, а она уже завтрашний день
+            if b > a and b.astimezone(MSK).time() == dt.time(0):
+                b -= dt.timedelta(seconds=1)
             if a >= w1 or b < w0:
                 continue
+            if a.astimezone(MSK).time() != dt.time(0) and b - a < dt.timedelta(days=1):
+                times[a.astimezone(MSK).date().isoformat()] = a.astimezone(MSK).strftime('%H:%M')
             day = max(a, w0).astimezone(MSK).date()
             last = min(b, w1 - dt.timedelta(seconds=1)).astimezone(MSK).date()
             while day <= last:
@@ -190,7 +195,7 @@ def nearbee(days):
                 day += dt.timedelta(days=1)
         if dates:
             out.append(item('nearbee', e['title'], dates, addr, f"https://nearbee.ru/events/{e.get('slug', '')}",
-                            ','.join(sorted(c for c in cats if c)), e.get('ticketUrl') or ''))
+                            ','.join(sorted(c for c in cats if c)), e.get('ticketUrl') or '') | {'times': times})
     return out
 
 
@@ -237,18 +242,57 @@ def kudab_search(ext):
             found += json.loads(raw).get('data', [])
     want = tokens(ext['title'])
     for e in found:
-        if kudab_day(e) in ext['dates'] and want & tokens(e.get('title')):
+        # одного общего слова мало: у концерта «Рок — это жизнь» и выставки «Дорога в вечную жизнь» оно есть
+        if kudab_day(e) in ext['dates'] and similar(want, tokens(e.get('title'))):
             return e
     return None
 
 
+STREET = r'(?:ул|пл|пр-кт|пр-д|пер|б-р|наб|ш|мкр|туп)'
+SERVICE = {'для', 'или', 'как', 'это', 'что', 'при', 'под', 'про', 'без', 'над', 'the'}
+STOP4 = {w[:4] for w in STOP}
+
+
+def place_key(addr):
+    """Улица и дом: «г Воронеж, ул Карла Маркса, д 67Б» → ('маркса', '67б'). None — в строке нет адреса."""
+    a = (addr or '').lower().replace('ё', 'е')
+    m = re.search(rf'(?:^|,)\s*(?:{STREET}\.?\s+([^,]+?)|([^,]+?)\s+{STREET}\.?),\s*(?:(?:д|уч|зд|влд)\.?\s*)?'
+                  r'(\d+[а-я]?(?:/\d+[а-я]?)?)\b', a)
+    return ((m.group(1) or m.group(2)).split()[-1], m.group(3)) if m else None
+
+
+def title_stems(title):
+    """Слова названия по четырём первым буквам: «мафия» и «мафию» — одно слово. Общие слова вроде «стендап»
+    не выбрасываются, см. `place_match`."""
+    t = html.unescape(title or '').lower().replace('ё', 'е')
+    return {w[:4] for w in re.sub(r'[^\w\s]', ' ', t).split()
+            if len(w) >= 3 and not w.isdigit() and w not in SERVICE and not w.startswith('воронеж')}
+
+
+def same_hour(x, e, day):
+    """Начало расходится не больше чем на час. Если час не знает хоть одна сторона — не мешает."""
+    t, at = (x.get('times') or {}).get(day), e.get('start_at') or ''
+    if not t or e.get('time_precision') != 'datetime' or len(at) < 16:
+        return True
+    return abs(int(t[:2]) * 60 + int(t[3:5]) - int(at[11:13]) * 60 - int(at[14:16])) <= 60
+
+
+def place_match(x, e, day):
+    """Событие в том же доме в тот же день. Общего слова вроде «концерт» мало: в библиотеке бывает три концерта
+    за день, тогда сверяется и час. Особому слову, как «Ваш Бэнд», час не нужен: афиши пишут то сбор, то начало."""
+    common = title_stems(x['title']) & title_stems(e.get('title'))
+    return bool(common - STOP4) or (bool(common) and same_hour(x, e, day))
+
+
 def match_all(ext_items, kudab):
-    by_day, by_link = {}, {}
+    by_day, by_link, by_place = {}, {}, {}
     for e in kudab:
         by_day.setdefault(kudab_day(e), []).append((tokens(e.get('title')), e))
         for u in (e.get('external_url'), e.get('price_url')):
             if link_key(u):
                 by_link[link_key(u)] = e
+        if place_key(e.get('address')):
+            by_place.setdefault((place_key(e.get('address')), kudab_day(e)), []).append(e)
     for x in ext_items:
         want = tokens(x['title'])
         x['match'] = None
@@ -264,6 +308,12 @@ def match_all(ext_items, kudab):
                     break
             if x['match']:
                 break
+        place = place_key(x['venue'])
+        if not x['match'] and place:
+            # «Стендап-шоу в кафе «ПАРНАС 2.0»» и наш «Большой стендап-концерт» там же — одно событие
+            e = next((e for d in x['dates'] for e in by_place.get((place, d), []) if place_match(x, e, d)), None)
+            if e:
+                x['match'] = {'id': e['id'], 'title': e.get('title'), 'how': 'место'}
         if not x['match']:
             e = kudab_search(x)
             if e:
@@ -292,7 +342,7 @@ def report(days, ext_items, groups, kudab, out_dir):
     lines = [f'# Охват афиши {days[0]:%d.%m}–{days[-1]:%d.%m.%Y}', '',
              f'Событий у чужих афиш: {len(groups)}, на kudab есть {len(covered)} — {pct(len(covered), len(groups))}.',
              f'Событий на kudab за эти дни всего: {len(kudab)}.',
-             'Найдены по ссылке на кассу, по названию в тот же день или поиском сайта; '
+             'Найдены по ссылке на кассу, по названию в тот же день, по дому и общему слову или поиском сайта; '
              'пропуски стоит проверить глазами — афиши называют одно событие по-разному.',
              '', '## По источникам', '']
     for src in names:
