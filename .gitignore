@@ -16,6 +16,10 @@ docs/agent-brief-*.md
 
 # runtime artifacts
 storage/
+# подложка карт собирается `make basemap-build`, в git только её рецепт (basemap/)
+data/basemap/
+basemap/cache/*
+!basemap/cache/.gitkeep
 
 # Let's Encrypt / certbot (ключи и renewal-конфиги)
 certs/prod/renewal/

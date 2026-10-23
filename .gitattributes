@@ -15,3 +15,5 @@
 *.ttf binary
 *.zip binary
 *.gz binary
+*.pbf binary
+*.pmtiles binary

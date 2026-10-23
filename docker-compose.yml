@@ -248,6 +248,7 @@ services:
       - ./services/kudab-api:/var/www/html:ro
       - ./services/kudab-parser/public:/var/www/parser/public:ro
       - ./services/kudab-parser:/var/www/parser:ro
+      - ./data/basemap:/var/www/basemap:ro
       - ./certs/prod:/etc/nginx/certs:ro
     depends_on:
       - kudab-api

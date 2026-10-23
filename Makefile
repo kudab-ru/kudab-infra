@@ -555,6 +555,15 @@ stand-db-rollback:
 	@test "$(strip $(STACK))" != "prod" || (echo "❌ только для стенда"; exit 2)
 	@bash scripts/dev/pull-prod-db.sh --rollback
 
+# Подложка карт по рецепту из basemap/: файлы ложатся в data/basemap, их раздаёт nginx по /basemap/.
+# Первая сборка качает около гигабайта и идёт минут десять; работает и на стенде, и на сервере.
+.PHONY: basemap-build
+basemap-build:
+	docker build -t kudab-basemap ./basemap
+	@mkdir -p data/basemap
+	@id=$$(docker create kudab-basemap) && docker cp $$id:/basemap/. data/basemap/ && docker rm $$id >/dev/null
+	@echo "✅ data/basemap: $$(du -sh data/basemap | cut -f1)"
+
 events-quality-address:
 	@set -e; \
 	DAYS="$${DAYS:-30}"; SHOW="$${SHOW:-20}"; \
