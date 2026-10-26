@@ -239,7 +239,10 @@ prod-deploy: prod-pull
 	@# тогда схему накатит обязательный шаг [4/7], он же поймает ошибку.
 	-$(PROD) exec -T $(API_SVC) php artisan migrate --force
 	@echo "==> [2/7] Build & up containers..."
-	$(PROD) up -d --build --remove-orphans --force-recreate
+	$(MAKE) prod-pull-bases
+	@# сеть до Docker Hub и зеркал npm и Alpine рвётся на минуты: одна повторная сборка через минуту
+	$(PROD) up -d --build --remove-orphans --force-recreate || \
+		{ echo "   сборка упала, повтор через минуту"; sleep 60; $(PROD) up -d --build --remove-orphans --force-recreate; }
 	@echo "==> [3/7] Waiting for DB to be ready (5s)..."
 	@sleep 5
 	@echo "==> [4/7] Schema migrations (kudab-api)..."
@@ -299,8 +302,14 @@ prod-deploy-tasks-status:
 
 prod-deploy-service: prod-pull
 	@test -n "$(SVC)" || (echo "SVC is required: make prod-deploy-service SVC=<service-name>"; exit 1)
-	$(PROD) up -d --no-deps --build --force-recreate $(SVC)
+	$(MAKE) prod-pull-bases
+	$(PROD) up -d --no-deps --build --force-recreate $(SVC) || \
+		{ echo "   сборка упала, повтор через минуту"; sleep 60; $(PROD) up -d --no-deps --build --force-recreate $(SVC); }
 	$(MAKE) docker-gc || true
+
+# Базовые образы сборки до сборки и с повтором, см. scripts/pull-base-images.sh
+prod-pull-bases:
+	@bash scripts/pull-base-images.sh
 
 down:
 	$(COMPOSE) down
@@ -402,12 +411,15 @@ docker-df:
 	@df -h / | sed -n '1,2p'
 	@docker system df
 
+# Как ночная уборка (scripts/docker-gc-cron.sh): `system prune -af` снёс бы базовые образы сборки и certbot,
+# и следующий выкат и продление сертификатов пошли бы за ними в Docker Hub.
 docker-gc:
 	@set -e; \
 	UNTIL="$${UNTIL:-$(DOCKER_GC_UNTIL)}"; \
 	echo "== docker gc (until=$$UNTIL) =="; \
 	docker builder prune -af --filter "until=$$UNTIL" || true; \
-	docker system prune  -af --filter "until=$$UNTIL" || true; \
+	docker image prune -f || true; \
+	docker container prune -f --filter "until=$$UNTIL" || true; \
 	echo "== docker df =="; \
 	docker system df || true
 
