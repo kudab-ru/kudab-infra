@@ -27,8 +27,6 @@ MTS_COLLECTIONS = ['concerts', 'theater', 'standup', 'show', 'children', 'exhibi
 YANDEX_SKIP = {'cinema', 'quest'}
 AFISHA_RU_SKIP = {'movie', 'quest', 'cinema'}
 NEARBEE_SKIP = {'cinema'}
-MONTHS_GEN = ['yanvarya', 'fevralya', 'marta', 'aprelya', 'maya', 'iyunya', 'iyulya',
-              'avgusta', 'sentyabrya', 'oktyabrya', 'noyabrya', 'dekabrya']
 
 # Слова, которые есть в названиях почти всех событий своего вида: по ним события не различить.
 STOP = set('''
@@ -122,12 +120,22 @@ def yandex(days):
 
 
 def afisha_ru(days):
-    out = {}
+    """Отдельные дни Афиша.ру отдаёт только на сегодня и завтра, дальше уводит на общую страницу города,
+    где спектакли других городов и других месяцев. Поэтому берём сегодня, завтра и выходные, прочие дни пропускаем."""
+    today = dt.datetime.now(MSK).date()
+    sat = today + dt.timedelta(days=(5 - today.weekday()) % 7)
+    slugs = {sat: 'na-vyhodnye', sat + dt.timedelta(days=1): 'na-vyhodnye',
+             today: 'na-segodnya', today + dt.timedelta(days=1): 'na-zavtra'}
+    pages, out = {}, {}
     for d in days:
-        slug = f'{d.day}-{MONTHS_GEN[d.month - 1]}'
-        page = get(f'https://www.afisha.ru/voronezh/events/{slug}/')
-        time.sleep(1.5)
-        if not page:
+        slug = slugs.get(d)
+        if not slug:
+            continue
+        if slug not in pages:
+            pages[slug] = get(f'https://www.afisha.ru/voronezh/events/{slug}/')
+            time.sleep(1.5)
+        page = pages[slug]
+        if not page or f'/voronezh/events/{slug}/"' not in (re.search(r'rel="canonical"[^>]*>', page) or [''])[0]:
             continue
         for m in re.finditer(r'<a\b[^>]*href="(/([a-z_]+)/[a-z0-9-]+-\d+/)(?:\?[^"]*)?"[^>]*>(.*?)</a>', page, re.S):
             path, kind, inner = m.group(1), m.group(2), m.group(3)
