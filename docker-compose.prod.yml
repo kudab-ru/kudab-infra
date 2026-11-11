@@ -45,9 +45,16 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      # Тот же префикс, что у kudab-horizon, во всех контейнерах парсера: с чужим
+      # префиксом список недавних задач в Redis никто не чистит и он растёт без конца.
+      HORIZON_PREFIX: "kudab_prod_hz:"
     depends_on:
       - kudab-db
       - redis
+
+  kudab-parser-fpm:
+    environment:
+      HORIZON_PREFIX: "kudab_prod_hz:"
 
   kudab-horizon:
     image: ${PARSER_IMAGE:-kudab-parser}
@@ -100,6 +107,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-redispass}
+      HORIZON_PREFIX: "kudab_prod_hz:"
     depends_on:
       - kudab-horizon
       - kudab-db
