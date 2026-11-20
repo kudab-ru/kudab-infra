@@ -1,5 +1,6 @@
 .env
 .idea
+.kimi-code/local.toml
 backups/*
 !backups/.gitkeep
 .last_deployed_commit

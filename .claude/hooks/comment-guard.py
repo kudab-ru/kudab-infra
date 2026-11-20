@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-ROOT = '/home/maks/projects/kudab-infra/'
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) + os.sep
 LINE_MAX = 2        # строк у обычного комментария
 DOC_MAX = 4         # строк у докблока, без @-тегов
 LINE_CHARS = 220    # текста у обычного комментария
@@ -20,7 +20,8 @@ DOC_CHARS = 360     # текста у докблока
 CODE_EXT = {'.php', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.vue', '.scss', '.css', '.py', '.sh', '.yml', '.yaml'}
 HASH_EXT = {'.py', '.sh', '.yml', '.yaml'}
 SKIP_PARTS = ('/vendor/', '/node_modules/', '/.nuxt/', '/.output/', '/dist/', '/storage/',
-              '/resources/views/', '/tests/Fixtures/', '/tmp/', '/notes/', '/docs/', '/.claude/', '/.git/')
+              '/resources/views/', '/tests/Fixtures/', '/tmp/', '/notes/', '/docs/', '/.claude/',
+              '/.kimi-code/', '/.git/')
 
 TAG_RE = re.compile(
     r'^@(param|return|var|throws|template|property|method|phpstan|psalm|extends|implements|mixin|'
@@ -293,7 +294,9 @@ def hook():
         return 0
     tool = data.get('tool_name', '')
     inp = data.get('tool_input') or {}
-    path = inp.get('file_path') or ''
+    raw_path = inp.get('path') or inp.get('file_path') or ''
+    cwd = data.get('cwd') or ROOT[:-1]
+    path = raw_path if os.path.isabs(raw_path) else os.path.abspath(os.path.join(cwd, raw_path))
     if not watched(path):
         return 0
     ext = ext_of(path)
